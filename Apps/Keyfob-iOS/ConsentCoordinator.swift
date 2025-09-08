@@ -4,6 +4,7 @@ import SwiftUI
 import KeyfobPolicy
 import KeyfobCore
 import KeyfobUI
+import KeyfobCrypto
 
 final class ConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
     static let shared = ConsentCoordinator()
@@ -30,8 +31,14 @@ final class ConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
                 return
             }
 
-            let host = UIHostingController(rootView: ConsentView(origin: origin, event: event, onApprove: {
+            let host = UIHostingController(rootView: ConsentView(origin: origin, event: event, onApprove: { decision in
                 approved = true
+                // If user requested a session (Mode B), start it now with current pubkey
+                if decision.useSession {
+                    if let pair = try? KeyManager.shared.loadKeypair() {
+                        PolicyEngine.shared.startSession(origin: origin, pubkey: pair.pubkeyHex, ttl: decision.ttl)
+                    }
+                }
                 presenter.dismiss(animated: true) { sem.signal() }
             }, onDeny: {
                 approved = false

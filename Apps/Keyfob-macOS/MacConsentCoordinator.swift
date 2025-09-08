@@ -4,6 +4,7 @@ import SwiftUI
 import KeyfobPolicy
 import KeyfobCore
 import KeyfobUI
+import LocalAuthentication
 
 final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
     static let shared = MacConsentCoordinator()
@@ -24,7 +25,32 @@ final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
                 event = NostrEvent(kind: 0, pubkey: "", created_at: Int(Date().timeIntervalSince1970), tags: [], content: eventPreview, id: nil, sig: nil)
             }
 
-            let content = ConsentView(origin: origin, event: event, onApprove: {
+            let content = ConsentView(origin: origin, event: event, onApprove: { decision in
+                // If user selected a session (Mode B), require biometry before approval
+                if decision.useSession {
+                    let ctx = LAContext()
+                    var error: NSError?
+                    let policy: LAPolicy = .deviceOwnerAuthentication
+                    if ctx.canEvaluatePolicy(policy, error: &error) {
+                        ctx.evaluatePolicy(policy, localizedReason: "Start Keyfob session") { success, evalError in
+                            DispatchQueue.main.async {
+                                if success {
+                                    approved = true
+                                } else {
+                                    approved = false
+                                }
+                                self.window?.close()
+                                semaphore.signal()
+                            }
+                        }
+                        return
+                    }
+                    // If we cannot evaluate policy, deny
+                    approved = false
+                    self.window?.close()
+                    semaphore.signal()
+                    return
+                }
                 approved = true
                 self.window?.close()
                 semaphore.signal()

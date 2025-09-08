@@ -116,6 +116,11 @@ public final class PolicyEngine {
         saveCallers()
     }
 
+    public func listAllowedCallers() -> [String] {
+        if allowedCallers.isEmpty { loadCallers() }
+        return Array(allowedCallers).sorted()
+    }
+
     public func startSession(origin: String, pubkey: String, ttl: TimeInterval? = nil) {
         sessions[SessionKey(origin: origin, pubkey: pubkey)] = Date().addingTimeInterval(ttl ?? defaultSessionTTL)
     }
