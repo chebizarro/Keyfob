@@ -23,6 +23,20 @@ public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol, NSXPCListenerD
         }
     }
 
+    public func getPublicKey(clientBundleID: String, with reply: @escaping (String?, NSError?) -> Void) {
+        if !PolicyEngine.shared.isCallerAllowed(clientBundleID) {
+            let err = NSError(domain: "KeyfobXPC", code: 403, userInfo: [NSLocalizedDescriptionKey: "Caller not allowed: \(clientBundleID)"])
+            reply(nil, err)
+            return
+        }
+        do {
+            let pair = try KeyManager.shared.loadKeypair()
+            reply(pair.pubkeyHex, nil)
+        } catch {
+            reply(nil, error as NSError)
+        }
+    }
+
     // NSXPCListenerDelegate
     public func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         newConnection.exportedInterface = NSXPCInterface(with: KeyfobXPCProtocol.self)
