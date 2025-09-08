@@ -1,10 +1,12 @@
 import AppKit
 import KeyfobBridge
+import KeyfobPolicy
 
 @main
 class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Initialize menubar status item here later
+        PolicyEngine.shared.consentProvider = MacConsentCoordinator.shared
     }
 
     // Handle Universal Links: https://keyfob.example.com/app/...

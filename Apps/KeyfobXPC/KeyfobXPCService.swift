@@ -4,13 +4,14 @@ import KeyfobCore
 import KeyfobCrypto
 import KeyfobPolicy
 
-// NOTE: To use this with an actual XPC target, create a separate XPC Service target in Xcode
-// and set its principal class to this service entry point. This SwiftPM file is a scaffold.
-
-public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol {
+public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol, NSXPCListenerDelegate {
     public func sign(eventJSON: Data, clientBundleID: String, originHint: String?, with reply: @escaping (Data?, NSError?) -> Void) {
-        // Validate caller bundle ID against allowlist (placeholder)
-        // TODO: Load allowlist from OriginRegistry and compare clientBundleID.
+        // Validate caller bundle ID against allowlist
+        if !PolicyEngine.shared.isCallerAllowed(clientBundleID) {
+            let err = NSError(domain: "KeyfobXPC", code: 403, userInfo: [NSLocalizedDescriptionKey: "Caller not allowed: \(clientBundleID)"])
+            reply(nil, err)
+            return
+        }
         do {
             let evt = try JSONDecoder().decode(NostrEvent.self, from: eventJSON)
             let origin = originHint ?? clientBundleID
@@ -20,5 +21,21 @@ public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol {
         } catch {
             reply(nil, error as NSError)
         }
+    }
+
+    // NSXPCListenerDelegate
+    public func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
+        newConnection.exportedInterface = NSXPCInterface(with: KeyfobXPCProtocol.self)
+        newConnection.exportedObject = self
+        newConnection.resume()
+        return true
+    }
+
+    public static func run() {
+        let listener = NSXPCListener.service()
+        let service = KeyfobXPCService()
+        listener.delegate = service
+        listener.resume()
+        // Never returns
     }
 }

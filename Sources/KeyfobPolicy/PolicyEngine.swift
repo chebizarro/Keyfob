@@ -29,6 +29,10 @@ public final class PolicyEngine {
     private var origins: [String: OriginRecord] = [:]
     private let originsFile = "origin_registry.json"
 
+    // MARK: - Caller Allowlist (for XPC/macOS)
+    private var allowedCallers: Set<String> = []
+    private let callersFile = "caller_allowlist.json"
+
     // MARK: - Session Manager
     private struct SessionKey: Hashable { let origin: String; let pubkey: String }
     private var sessions: [SessionKey: Date] = [:] // expiry per session
@@ -94,6 +98,24 @@ public final class PolicyEngine {
         saveOrigins()
     }
 
+    // MARK: - Caller Allowlist (XPC)
+    public func isCallerAllowed(_ bundleID: String) -> Bool {
+        if allowedCallers.isEmpty { loadCallers() }
+        return allowedCallers.contains(bundleID)
+    }
+
+    public func allowCaller(_ bundleID: String) {
+        if allowedCallers.isEmpty { loadCallers() }
+        allowedCallers.insert(bundleID)
+        saveCallers()
+    }
+
+    public func removeCaller(_ bundleID: String) {
+        if allowedCallers.isEmpty { loadCallers() }
+        allowedCallers.remove(bundleID)
+        saveCallers()
+    }
+
     public func startSession(origin: String, pubkey: String, ttl: TimeInterval? = nil) {
         sessions[SessionKey(origin: origin, pubkey: pubkey)] = Date().addingTimeInterval(ttl ?? defaultSessionTTL)
     }
@@ -136,6 +158,21 @@ public final class PolicyEngine {
     private func saveOrigins() {
         guard let url = containerURL()?.appendingPathComponent(originsFile) else { return }
         if let data = try? JSONEncoder().encode(origins) {
+            try? data.write(to: url)
+        }
+    }
+
+    private func loadCallers() {
+        guard let url = containerURL()?.appendingPathComponent(callersFile) else { return }
+        if let data = try? Data(contentsOf: url), let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            allowedCallers = Set(decoded)
+        }
+    }
+
+    private func saveCallers() {
+        guard let url = containerURL()?.appendingPathComponent(callersFile) else { return }
+        let arr = Array(allowedCallers).sorted()
+        if let data = try? JSONEncoder().encode(arr) {
             try? data.write(to: url)
         }
     }

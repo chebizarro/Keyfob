@@ -4,10 +4,14 @@ import KeyfobCore
 public struct ConsentView: View {
     let origin: String
     let event: NostrEvent
+    let onApprove: () -> Void
+    let onDeny: () -> Void
 
-    public init(origin: String, event: NostrEvent) {
+    public init(origin: String, event: NostrEvent, onApprove: @escaping () -> Void, onDeny: @escaping () -> Void) {
         self.origin = origin
         self.event = event
+        self.onApprove = onApprove
+        self.onDeny = onDeny
     }
 
     public var body: some View {
@@ -20,9 +24,9 @@ public struct ConsentView: View {
                     .frame(maxHeight: 200)
             }
             HStack {
-                Button("Deny") {}
+                Button("Deny") { onDeny() }
                 Spacer()
-                Button("Approve") {}
+                Button("Approve") { onApprove() }
                     .keyboardShortcut(.defaultAction)
             }
         }
