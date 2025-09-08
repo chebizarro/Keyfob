@@ -5,6 +5,7 @@ import KeyfobPolicy
 import KeyfobCore
 import KeyfobUI
 import KeyfobCrypto
+import LocalAuthentication
 
 final class ConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
     static let shared = ConsentCoordinator()
@@ -32,13 +33,34 @@ final class ConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
             }
 
             let host = UIHostingController(rootView: ConsentView(origin: origin, event: event, onApprove: { decision in
-                approved = true
-                // If user requested a session (Mode B), start it now with current pubkey
+                // If user requested a session (Mode B), require biometry before approval
                 if decision.useSession {
-                    if let pair = try? KeyManager.shared.loadKeypair() {
-                        PolicyEngine.shared.startSession(origin: origin, pubkey: pair.pubkeyHex, ttl: decision.ttl)
+                    let ctx = LAContext()
+                    var error: NSError?
+                    let policy: LAPolicy = .deviceOwnerAuthentication
+                    if ctx.canEvaluatePolicy(policy, error: &error) {
+                        ctx.evaluatePolicy(policy, localizedReason: "Start Keyfob session") { success, _ in
+                            DispatchQueue.main.async {
+                                if success {
+                                    if let pair = try? KeyManager.shared.loadKeypair() {
+                                        PolicyEngine.shared.startSession(origin: origin, pubkey: pair.pubkeyHex, ttl: decision.ttl)
+                                    }
+                                    approved = true
+                                } else {
+                                    approved = false
+                                }
+                                presenter.dismiss(animated: true) { sem.signal() }
+                            }
+                        }
+                        return
+                    } else {
+                        // Cannot evaluate policy; deny
+                        approved = false
+                        presenter.dismiss(animated: true) { sem.signal() }
+                        return
                     }
                 }
+                approved = true
                 presenter.dismiss(animated: true) { sem.signal() }
             }, onDeny: {
                 approved = false

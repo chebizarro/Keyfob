@@ -44,6 +44,46 @@ This section helps you exercise each IPC surface quickly. Fill placeholders as n
 
 # Integration Guide
 
+## Allowlist Management (macOS XPC)
+
+The macOS XPC service enforces a caller allowlist stored in the App Group container. You can manage it in two ways:
+
+- App UI (recommended)
+  - Launch the macOS app. Click the menu bar item “Keyfob” → “Manage Allowlist…”.
+  - Add the bundle identifiers of trusted callers (e.g., your macOS app and Safari App Extension).
+  - Remove entries to revoke access.
+
+- Programmatic (PolicyEngine)
+  - `PolicyEngine.shared.allowCaller("<bundle.id>")`
+  - `PolicyEngine.shared.removeCaller("<bundle.id>")`
+  - `PolicyEngine.shared.isCallerAllowed("<bundle.id>") -> Bool`
+  - `PolicyEngine.shared.listAllowedCallers() -> [String]`
+
+Notes:
+- XPC calls from non-allowlisted bundle IDs will receive a 403 error.
+- Ensure bundle IDs and entitlements are set correctly across the macOS app, XPC service, and Safari App Extension.
+
+## XPC Troubleshooting (macOS)
+
+If your Safari App Extension cannot reach the XPC service or calls fail:
+
+- Service not launching
+  - Verify the XPC service target is of type “XPC Service” and code-signed.
+  - Ensure the service bundle identifier matches the name you pass to `NSXPCConnection(serviceName:)`.
+  - Check that the service embeds or is discoverable by the host app as expected (standard XPC service placement in the app bundle).
+
+- 403 from XPC
+  - Add the caller bundle ID to the allowlist: macOS menu bar → “Manage Allowlist…”.
+  - Confirm the caller’s bundle ID is correct (log `Bundle.main.bundleIdentifier`).
+
+- Entitlements / Sandboxing
+  - App Group and Keychain Access Group should be consistent across macOS app, XPC, and extension when accessing shared state.
+  - Ensure the XPC service has only the minimal needed entitlements.
+
+- Debugging
+  - Add logs in `KeyfobXPCService.listener(_:shouldAcceptNewConnection:)` and the `sign/getPublicKey` methods.
+  - Use the “Print Allowlist to Console” menu item to verify the current allowlist.
+
 This document describes the IPC contracts and how to integrate with keyfob.
 
 ## App Intent (iOS)

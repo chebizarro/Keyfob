@@ -17,6 +17,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Manage Allowlist…", action: #selector(openAllowlist), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
+        menu.addItem(NSMenuItem(title: "About Keyfob", action: #selector(openAbout), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Print Allowlist to Console", action: #selector(printAllowlist), keyEquivalent: "l"))
         menu.addItem(NSMenuItem(title: "Quit Keyfob", action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         self.statusItem = item
@@ -49,5 +51,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quitApp() {
         NSApp.terminate(nil)
+    }
+
+    @objc private func openAbout() {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        let text = "Keyfob\nVersion \(v) (\(build))\n\nWebsite: github.com/yourorg/keyfob"
+        let alert = NSAlert()
+        alert.messageText = "About Keyfob"
+        alert.informativeText = text
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
+    @objc private func printAllowlist() {
+        let callers = PolicyEngine.shared.listAllowedCallers()
+        NSLog("[Keyfob] Allowed callers: \(callers)")
     }
 }
