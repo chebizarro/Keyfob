@@ -8,33 +8,33 @@ struct ContentView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Key")) {
+                Section(header: Text(NSLocalizedString("content.key_section", comment: "Key section header"))) {
                     HStack {
-                        Text("Pubkey (hex)")
+                        Text(NSLocalizedString("content.pubkey_label", comment: "Pubkey label"))
                         Spacer()
                     }
-                    Text(pubkey.isEmpty ? "Not generated" : pubkey)
+                    Text(pubkey.isEmpty ? NSLocalizedString("content.not_generated", comment: "Not generated") : pubkey)
                         .font(.footnote)
                         .textSelection(.enabled)
-                    Button("Generate/Load Key") {
+                    Button(NSLocalizedString("content.generate_btn", comment: "Generate/Load Key")) {
                         do {
                             let pair = try KeyManager.shared.generateIfNeeded(useICloud: true)
                             pubkey = pair.pubkeyHex
-                            status = "Loaded"
+                            status = NSLocalizedString("content.loaded", comment: "Loaded")
                         } catch {
-                            status = "Error: \(error.localizedDescription)"
+                            status = String(format: NSLocalizedString("content.error_fmt", comment: "Error fmt"), error.localizedDescription)
                         }
                     }
                 }
-                Section(header: Text("Status")) {
+                Section(header: Text(NSLocalizedString("content.status_section", comment: "Status section"))) {
                     Text(status)
                         .font(.footnote)
                 }
-                Section(footer: Text("Universal Links: ensure Associated Domains include applinks:keyfob.example.com and the hosted pages return to your app/web via the configured callback.").font(.footnote)) {
+                Section(footer: Text(NSLocalizedString("content.footer_ul", comment: "UL footer")).font(.footnote)) {
                     EmptyView()
                 }
             }
-            .navigationTitle("Keyfob")
+            .navigationTitle(NSLocalizedString("content.nav_title", comment: "Nav title"))
         }
     }
 }

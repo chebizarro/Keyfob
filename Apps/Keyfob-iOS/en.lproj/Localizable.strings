@@ -1,0 +1,9 @@
+"content.key_section" = "Key";
+"content.pubkey_label" = "Pubkey (hex)";
+"content.not_generated" = "Not generated";
+"content.generate_btn" = "Generate/Load Key";
+"content.loaded" = "Loaded";
+"content.error_fmt" = "Error: %@";
+"content.status_section" = "Status";
+"content.footer_ul" = "Universal Links: ensure Associated Domains include applinks:keyfob.example.com and the hosted pages return to your app/web via the configured callback.";
+"content.nav_title" = "Keyfob";

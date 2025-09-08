@@ -1,0 +1,9 @@
+"onboard.title" = "Enable the Keyfob Safari Web Extension";
+"onboard.step1" = "1. Build & install this app on your iPhone/iPad.";
+"onboard.step2" = "2. Open Settings → Safari → Extensions.";
+"onboard.step3" = "3. Enable ‘Keyfob NIP-07’. Grant permissions when asked.";
+"onboard.step4" = "4. Visit a Nostr-enabled site in Safari and it will detect window.nostr.";
+"onboard.open_settings" = "Open Settings";
+"onboard.troubleshooting" = "Troubleshooting";
+"onboard.troubleshooting_text" = "• Ensure Associated Domains includes applinks:keyfob.example.com (replace with your domain).\n• Universal Links must route to the Keyfob app and callback page must postMessage back to the opener.\n• See Web/demo/callback.html for a reference callback page.";
+"onboard.nav_title" = "Keyfob Extension";

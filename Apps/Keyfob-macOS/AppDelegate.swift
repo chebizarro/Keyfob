@@ -13,13 +13,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Create menu bar item
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Keyfob"
+        item.button?.title = NSLocalizedString("menu.title", comment: "Status bar title")
         let menu = NSMenu()
-        menu.addItem(NSMenuItem(title: "Manage Allowlist…", action: #selector(openAllowlist), keyEquivalent: ","))
+        menu.addItem(NSMenuItem(title: NSLocalizedString("menu.manage_allowlist", comment: "Manage Allowlist"), action: #selector(openAllowlist), keyEquivalent: ","))
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "About Keyfob", action: #selector(openAbout), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Print Allowlist to Console", action: #selector(printAllowlist), keyEquivalent: "l"))
-        menu.addItem(NSMenuItem(title: "Quit Keyfob", action: #selector(quitApp), keyEquivalent: "q"))
+        menu.addItem(NSMenuItem(title: NSLocalizedString("menu.about", comment: "About"), action: #selector(openAbout), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: NSLocalizedString("menu.print_allowlist", comment: "Print allowlist"), action: #selector(printAllowlist), keyEquivalent: "l"))
+        menu.addItem(NSMenuItem(title: NSLocalizedString("menu.quit", comment: "Quit"), action: #selector(quitApp), keyEquivalent: "q"))
         item.menu = menu
         self.statusItem = item
     }
@@ -56,11 +56,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func openAbout() {
         let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
-        let text = "Keyfob\nVersion \(v) (\(build))\n\nWebsite: github.com/yourorg/keyfob"
+        let fmt = NSLocalizedString("about.text", comment: "About multi-line text with placeholders for version and build")
+        let text = String(format: fmt, v, build)
         let alert = NSAlert()
-        alert.messageText = "About Keyfob"
+        alert.messageText = NSLocalizedString("about.title", comment: "About title")
         alert.informativeText = text
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: NSLocalizedString("about.ok", comment: "OK button"))
         alert.runModal()
     }
 

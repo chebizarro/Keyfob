@@ -1,0 +1,9 @@
+"menu.title" = "Keyfob";
+"menu.manage_allowlist" = "Manage Allowlist…";
+"menu.about" = "About Keyfob";
+"menu.print_allowlist" = "Print Allowlist to Console";
+"menu.quit" = "Quit Keyfob";
+
+"about.title" = "About Keyfob";
+"about.text" = "Keyfob\nVersion %@ (%@)\n\nWebsite: github.com/yourorg/keyfob";
+"about.ok" = "OK";

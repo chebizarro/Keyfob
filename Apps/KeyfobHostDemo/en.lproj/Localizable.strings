@@ -1,0 +1,10 @@
+"demo.event_section" = "Event JSON";
+"demo.actions_section" = "Actions";
+"demo.sign_scheme" = "Sign via keyfob:// URL scheme";
+"demo.sign_shortcuts" = "Sign via App Intent (Shortcuts)";
+"demo.sign_direct" = "Sign via App Intent (Direct)";
+"demo.callback_section" = "Callback Result";
+"demo.shortcut_note" = "App Intent signing uses Shortcuts to invoke Keyfob's App Intent. Ensure the App Shortcut exists in the Shortcuts app.";
+"demo.nav_title" = "Keyfob Demo";
+"demo.callback_ok_fmt" = "OK\n id=%@\n sig=%@\n pubkey=%@";
+"demo.callback_err_fmt" = "ERR %@ : %@";

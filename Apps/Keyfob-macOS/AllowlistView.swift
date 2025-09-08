@@ -8,12 +8,12 @@ struct AllowlistView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("XPC Caller Allowlist")
+            Text(NSLocalizedString("allow.title", comment: "Allowlist title"))
                 .font(.title2).bold()
             HStack {
-                TextField("Bundle Identifier (e.g. com.yourorg.KeyfobSafariAE)", text: $newBundleID)
+                TextField(NSLocalizedString("allow.placeholder", comment: "Bundle id placeholder"), text: $newBundleID)
                     .textFieldStyle(.roundedBorder)
-                Button("Add") { add() }
+                Button(NSLocalizedString("allow.add", comment: "Add")) { add() }
                     .disabled(newBundleID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             List {
@@ -40,14 +40,14 @@ struct AllowlistView: View {
         let id = newBundleID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !id.isEmpty else { return }
         PolicyEngine.shared.allowCaller(id)
-        status = "Added \(id)"
+        status = String(format: NSLocalizedString("allow.added_fmt", comment: "Added fmt"), id)
         newBundleID = ""
         refresh()
     }
 
     private func remove(_ id: String) {
         PolicyEngine.shared.removeCaller(id)
-        status = "Removed \(id)"
+        status = String(format: NSLocalizedString("allow.removed_fmt", comment: "Removed fmt"), id)
         refresh()
     }
 }

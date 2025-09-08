@@ -58,6 +58,8 @@ final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
                 approved = false
                 self.window?.close()
                 semaphore.signal()
+            }, onError: { msg in
+                NSLog("[Keyfob][Consent][macOS] %@", msg)
             })
             let hosting = NSHostingView(rootView: content)
 

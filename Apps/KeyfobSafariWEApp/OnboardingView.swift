@@ -5,13 +5,13 @@ struct OnboardingView: View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("Enable the Keyfob Safari Web Extension")
+                    Text(NSLocalizedString("onboard.title", comment: "Enable extension title"))
                         .font(.title2).bold()
                     Group {
-                        Text("1. Build & install this app on your iPhone/iPad.")
-                        Text("2. Open Settings → Safari → Extensions.")
-                        Text("3. Enable ‘Keyfob NIP-07’. Grant permissions when asked.")
-                        Text("4. Visit a Nostr-enabled site in Safari and it will detect window.nostr.")
+                        Text(NSLocalizedString("onboard.step1", comment: "Step 1"))
+                        Text(NSLocalizedString("onboard.step2", comment: "Step 2"))
+                        Text(NSLocalizedString("onboard.step3", comment: "Step 3"))
+                        Text(NSLocalizedString("onboard.step4", comment: "Step 4"))
                     }
                     .font(.body)
                     .padding(.leading, 4)
@@ -23,22 +23,22 @@ struct OnboardingView: View {
                     } label: {
                         HStack {
                             Image(systemName: "gear")
-                            Text("Open Settings")
+                            Text(NSLocalizedString("onboard.open_settings", comment: "Open Settings"))
                         }
                     }
                     .buttonStyle(.borderedProminent)
 
                     Divider().padding(.vertical, 8)
 
-                    Text("Troubleshooting")
+                    Text(NSLocalizedString("onboard.troubleshooting", comment: "Troubleshooting"))
                         .font(.headline)
-                    Text("• Ensure Associated Domains includes applinks:keyfob.example.com (replace with your domain).\n• Universal Links must route to the Keyfob app and callback page must postMessage back to the opener.\n• See Web/demo/callback.html for a reference callback page.")
+                    Text(NSLocalizedString("onboard.troubleshooting_text", comment: "Troubleshooting text"))
                         .font(.footnote)
                         .foregroundColor(.secondary)
                 }
                 .padding()
             }
-            .navigationTitle("Keyfob Extension")
+            .navigationTitle(NSLocalizedString("onboard.nav_title", comment: "Nav title"))
         }
     }
 }

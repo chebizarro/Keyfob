@@ -8,3 +8,5 @@
 "consent.deny" = "Deny";
 "consent.serialize_error" = "Unable to display event JSON";
 "consent.serialize_error_hint" = "The event could not be serialized for display. You can still approve or deny.";
+"consent.copy_json" = "Copy JSON";
+"consent.copy_content" = "Copy Content";

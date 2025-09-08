@@ -65,6 +65,8 @@ final class ConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
             }, onDeny: {
                 approved = false
                 presenter.dismiss(animated: true) { sem.signal() }
+            }, onError: { msg in
+                NSLog("[Keyfob][Consent] %@", msg)
             }))
             host.modalPresentationStyle = .formSheet
             presenter.present(host, animated: true)

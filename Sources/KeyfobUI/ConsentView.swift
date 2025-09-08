@@ -1,5 +1,10 @@
 import SwiftUI
 import KeyfobCore
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
 
 public struct ConsentDecision {
     public let useSession: Bool
@@ -55,6 +60,14 @@ public struct ConsentView: View {
                     }
                 }
                 .frame(maxHeight: 200)
+                HStack {
+                    Button(L("consent.copy_json")) { copy(serializedEvent ?? "") }
+                        .buttonStyle(.bordered)
+                        .disabled(serializedEvent == nil)
+                    Button(L("consent.copy_content")) { copy(event.content) }
+                        .buttonStyle(.bordered)
+                    Spacer()
+                }
             }
             Divider()
             Toggle(L("consent.mode_b_toggle"), isOn: $useSession)
@@ -93,4 +106,14 @@ public struct ConsentView: View {
 // MARK: - Localization helper for SPM resources
 private func L(_ key: String) -> String {
     NSLocalizedString(key, tableName: nil, bundle: .module, value: key, comment: "")
+}
+
+private func copy(_ text: String) {
+#if canImport(UIKit)
+    UIPasteboard.general.string = text
+#elseif canImport(AppKit)
+    let pb = NSPasteboard.general
+    pb.clearContents()
+    pb.setString(text, forType: .string)
+#endif
 }

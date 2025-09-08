@@ -11,26 +11,26 @@ struct DemoView: View {
     var body: some View {
         NavigationView {
             Form {
-                Section(header: Text("Event JSON")) {
+                Section(header: Text(NSLocalizedString("demo.event_section", comment: "Event section"))) {
                     TextEditor(text: $eventJSON).frame(minHeight: 160)
                 }
-                Section(header: Text("Actions")) {
-                    Button("Sign via keyfob:// URL scheme") { signViaURLScheme() }
+                Section(header: Text(NSLocalizedString("demo.actions_section", comment: "Actions"))) {
+                    Button(NSLocalizedString("demo.sign_scheme", comment: "Sign via scheme")) { signViaURLScheme() }
                     if #available(iOS 16.0, *) {
-                        Button("Sign via App Intent (Shortcuts)") { signViaAppIntent() }
-                        Button("Sign via App Intent (Direct)") { signViaAppIntentDirect() }
+                        Button(NSLocalizedString("demo.sign_shortcuts", comment: "Sign via Shortcuts")) { signViaAppIntent() }
+                        Button(NSLocalizedString("demo.sign_direct", comment: "Sign via Direct")) { signViaAppIntentDirect() }
                     }
                 }
-                Section(header: Text("Callback Result")) {
+                Section(header: Text(NSLocalizedString("demo.callback_section", comment: "Callback result"))) {
                     Text(callbackResult).font(.footnote)
                 }
                 if #available(iOS 16.0, *) {
-                    Section(footer: Text("App Intent signing uses Shortcuts to invoke Keyfob's App Intent. Ensure the App Shortcut exists in the Shortcuts app.").font(.footnote)) {
+                    Section(footer: Text(NSLocalizedString("demo.shortcut_note", comment: "Shortcuts note")).font(.footnote)) {
                         EmptyView()
                     }
                 }
             }
-            .navigationTitle("Keyfob Demo")
+            .navigationTitle(NSLocalizedString("demo.nav_title", comment: "Nav title"))
         }
         .onOpenURL { url in
             guard url.scheme == "keyfobdemo" else { return }
@@ -41,9 +41,11 @@ struct DemoView: View {
                     let id = q["id"] ?? ""
                     let sig = q["sig"] ?? ""
                     let pub = q["pubkey"] ?? ""
-                    callbackResult = "OK\n id=\(id)\n sig=\(sig)\n pubkey=\(pub)"
+                    let fmt = NSLocalizedString("demo.callback_ok_fmt", comment: "OK format")
+                    callbackResult = String(format: fmt, id, sig, pub)
                 } else {
-                    callbackResult = "ERR \(q["code"] ?? "") : \(q["msg"] ?? "")"
+                    let fmt = NSLocalizedString("demo.callback_err_fmt", comment: "ERR format")
+                    callbackResult = String(format: fmt, q["code"] ?? "", q["msg"] ?? "")
                 }
             }
         }
