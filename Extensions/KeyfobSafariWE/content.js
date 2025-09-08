@@ -27,7 +27,7 @@
   }
 
   async function handoff(path, params) {
-    const cb = `${ORIGIN}/#${CB_ID}`;
+    const cb = `${ORIGIN}/callback.html#${CB_ID}`;
     const q = new URLSearchParams({...params, cb, origin: ORIGIN});
     const url = `${UL_BASE}/${path}?${q.toString()}`;
     // Open in a new window/tab to allow user to confirm
