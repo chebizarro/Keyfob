@@ -1,0 +1,78 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# SwiftPM
+.build/
+/.swiftpm/xcode/xcuserdata/
+/.swiftpm/xcode/package.xcworkspace/xcuserdata/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.xccrashpoint
+*.moved-aside
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+
+# Build artifacts
+*.o
+*.dSYM
+*.dSYM.zip
+*.ipa
+*.xcarchive
+
+# Logs
+*.log
+
+# SwiftLint / SwiftFormat caches
+.swiftlint.cache
+.swiftformat
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Node / Web (Safari Web Extension, demo)
+node_modules/
+**/node_modules/
+**/dist/
+**/build/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# Python (demo devserver)
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Editors/IDE
+.vscode/
+.idea/
+*.swp
+
+# Coverage
+*.profraw
+*.profdata
+
+# Secrets (never commit real secrets; use env vars or CI secrets)
+.env
+.env.*
+
+# Temporary
+*.tmp
+*.temp
+*.bak
+
+# Safari Extension generated artifacts (if any bundlers are used later)
+Extensions/KeyfobSafariWE/.webpack/

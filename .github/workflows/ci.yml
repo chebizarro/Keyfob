@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+
+jobs:
+  build-test:
+    strategy:
+      matrix:
+        platform: [ iOS, macOS ]
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache SPM
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.swiftpm
+            .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('**/Package.resolved') }}
+      - name: Select Xcode
+        run: sudo xcode-select -s "/Applications/Xcode_15.4.app"
+      - name: Build and Test (SPM)
+        run: swift test -v
+      - name: Lint (optional)
+        if: ${{ false }}
+        run: echo "Add swiftlint/swift-format here"
+      - name: Archive on tag (placeholder)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "Sign and export archives if signing secrets are present"

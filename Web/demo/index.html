@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Keyfob Demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style> body { font-family: -apple-system, system-ui; margin: 2rem; } textarea { width: 100%; height: 12rem; } </style>
+  </head>
+  <body>
+    <h1>Keyfob NIP-07 Demo</h1>
+    <button id="btnGetPk">getPublicKey()</button>
+    <pre id="pk"></pre>
+
+    <h2>signEvent(event)</h2>
+    <textarea id="evt">{"kind":1,"pubkey":"","created_at":0,"tags":[],"content":"hello"}</textarea>
+    <button id="btnSign">signEvent</button>
+    <pre id="out"></pre>
+
+    <script>
+      // The Safari extension injects window.nostr
+      document.getElementById('btnGetPk').onclick = async () => {
+        try { document.getElementById('pk').textContent = await window.nostr.getPublicKey(); }
+        catch (e) { document.getElementById('pk').textContent = String(e); }
+      };
+      document.getElementById('btnSign').onclick = async () => {
+        try {
+          const evt = JSON.parse(document.getElementById('evt').value);
+          const signed = await window.nostr.signEvent(evt);
+          document.getElementById('out').textContent = JSON.stringify(signed, null, 2);
+        } catch (e) { document.getElementById('out').textContent = String(e); }
+      };
+    </script>
+  </body>
+</html>

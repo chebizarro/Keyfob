@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>TODO.com.yourorg.keyfob.macos.safariext</string>
+  <key>SFSafariWebsiteAccess</key>
+  <dict>
+    <key>Allowed Domains</key>
+    <array>
+      <string>*</string>
+    </array>
+    <key>Level</key>
+    <string>Some</string>
+  </dict>
+</dict>
+</plist>
