@@ -1,0 +1,10 @@
+"consent.title" = "Request from %@";
+"consent.kind" = "Kind: %d";
+"consent.content_preview" = "Content preview:";
+"consent.raw_json" = "Raw JSON";
+"consent.mode_b_toggle" = "Create a temporary session (Mode B)";
+"consent.session_ttl" = "Session TTL (minutes)";
+"consent.approve" = "Approve";
+"consent.deny" = "Deny";
+"consent.serialize_error" = "Unable to display event JSON";
+"consent.serialize_error_hint" = "The event could not be serialized for display. You can still approve or deny.";

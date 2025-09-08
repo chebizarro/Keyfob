@@ -65,7 +65,10 @@ let package = Package(
         .target(
             name: "KeyfobUI",
             dependencies: ["KeyfobCore"],
-            path: "Sources/KeyfobUI"
+            path: "Sources/KeyfobUI",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .testTarget(
             name: "KeyfobUITests",
