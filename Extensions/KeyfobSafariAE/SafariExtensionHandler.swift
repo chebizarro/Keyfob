@@ -6,18 +6,20 @@ final class SafariExtensionHandler: SFSafariExtensionHandler {
     private let xpcServiceName = "TODO.com.yourorg.keyfob.mac.xpc"
 
     override func messageReceived(withName messageName: String, from page: SFSafariPage, userInfo: [String : Any]?) {
+        let reqId = (userInfo?["reqId"] as? String) ?? ""
         switch messageName {
         case "keyfob_getPublicKey":
             getPublicKey { result in
                 self.reply(name: "keyfob_response", to: page, payload: [
                     "ok": result.ok,
                     "pubkey": result.pubkey ?? "",
-                    "msg": result.msg ?? ""
+                    "msg": result.msg ?? "",
+                    "reqId": reqId
                 ])
             }
         case "keyfob_signEvent":
             guard let eventJSON = userInfo?["eventJSON"] as? String else {
-                reply(name: "keyfob_response", to: page, payload: ["ok": 0, "msg": "missing eventJSON"])
+                reply(name: "keyfob_response", to: page, payload: ["ok": 0, "msg": "missing eventJSON", "reqId": reqId])
                 return
             }
             sign(eventJSON: eventJSON) { result in
@@ -26,7 +28,8 @@ final class SafariExtensionHandler: SFSafariExtensionHandler {
                     "id": result.id ?? "",
                     "sig": result.sig ?? "",
                     "pubkey": result.pubkey ?? "",
-                    "msg": result.msg ?? ""
+                    "msg": result.msg ?? "",
+                    "reqId": reqId
                 ])
             }
         default:
