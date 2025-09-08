@@ -2,6 +2,21 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSExtension</key>
+  <dict>
+    <key>NSExtensionPointIdentifier</key>
+    <string>com.apple.Safari.extension</string>
+    <key>NSExtensionPrincipalClass</key>
+    <string>$(PRODUCT_MODULE_NAME).SafariExtensionHandler</string>
+    <key>NSExtensionAttributes</key>
+    <dict>
+      <key>PrimaryToolbarItem</key>
+      <dict>
+        <key>Label</key>
+        <string>Keyfob</string>
+      </dict>
+    </dict>
+  </dict>
   <key>CFBundleIdentifier</key>
   <string>TODO.com.yourorg.keyfob.macos.safariext</string>
   <key>SFSafariWebsiteAccess</key>
