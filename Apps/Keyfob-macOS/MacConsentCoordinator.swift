@@ -67,7 +67,7 @@ final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
                              styleMask: [.titled, .closable],
                              backing: .buffered,
                              defer: false)
-            w.title = "Keyfob Approval"
+            w.title = NSLocalizedString("consent.window_title", comment: "Consent window title")
             w.contentView = hosting
             w.center()
             self.window = w

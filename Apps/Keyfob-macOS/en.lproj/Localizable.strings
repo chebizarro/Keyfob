@@ -7,3 +7,11 @@
 "about.title" = "About Keyfob";
 "about.text" = "Keyfob\nVersion %@ (%@)\n\nWebsite: github.com/yourorg/keyfob";
 "about.ok" = "OK";
+
+"allow.title" = "XPC Caller Allowlist";
+"allow.placeholder" = "Bundle Identifier (e.g. com.yourorg.KeyfobSafariAE)";
+"allow.add" = "Add";
+"allow.added_fmt" = "Added %@";
+"allow.removed_fmt" = "Removed %@";
+
+"consent.window_title" = "Keyfob Approval";
