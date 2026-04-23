@@ -67,15 +67,22 @@ final class MockRelay: @unchecked Sendable {
     ///   - subscriptionId: The subscription ID to target.
     ///   - event: The relay event to deliver.
     func injectEvent(subscriptionId: String, event: RelayEvent) {
-        let tags = event.tags.map { tag in
-            "[" + tag.map { "\"\($0)\"" }.joined(separator: ",") + "]"
-        }.joined(separator: ",")
-
-        let json = """
-        ["EVENT","\(subscriptionId)",{"id":"\(event.id)","pubkey":"\(event.pubkey)",\
-        "created_at":\(event.created_at),"kind":\(event.kind),\
-        "tags":[\(tags)],"content":"\(event.content)","sig":"\(event.sig)"}]
-        """
+        // Use JSONSerialization for proper escaping of content and other fields
+        let eventDict: [String: Any] = [
+            "id": event.id,
+            "pubkey": event.pubkey,
+            "created_at": event.created_at,
+            "kind": event.kind,
+            "tags": event.tags,
+            "content": event.content,
+            "sig": event.sig
+        ]
+        let frame: [Any] = ["EVENT", subscriptionId, eventDict]
+        guard let data = try? JSONSerialization.data(withJSONObject: frame),
+              let json = String(data: data, encoding: .utf8) else {
+            XCTFail("Failed to serialize EVENT frame")
+            return
+        }
         transport.enqueue(json)
     }
 
