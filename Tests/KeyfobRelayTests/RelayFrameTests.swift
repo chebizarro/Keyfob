@@ -255,6 +255,94 @@ final class NostrFilterTests: XCTestCase {
     }
 }
 
+// MARK: - ReconnectPolicy Tests
+
+final class ReconnectPolicyTests: XCTestCase {
+
+    func testDefaultPreset() {
+        let policy = ReconnectPolicy.default
+        XCTAssertTrue(policy.isEnabled)
+        XCTAssertEqual(policy.baseDelay, 1.0)
+        XCTAssertEqual(policy.maxDelay, 30.0)
+        XCTAssertEqual(policy.multiplier, 2.0)
+        XCTAssertEqual(policy.jitterFraction, 0.25)
+        XCTAssertEqual(policy.stableThreshold, 30.0)
+        XCTAssertEqual(policy.attempt, 0)
+    }
+
+    func testDisabledPreset() {
+        let policy = ReconnectPolicy.disabled
+        XCTAssertFalse(policy.isEnabled)
+    }
+
+    func testExponentialBackoff() {
+        var policy = ReconnectPolicy(
+            baseDelay: 1.0, maxDelay: 30.0,
+            multiplier: 2.0, jitterFraction: 0.0
+        )
+        XCTAssertEqual(policy.nextDelay(), 1.0, accuracy: 0.001) // 1 * 2^0
+        XCTAssertEqual(policy.nextDelay(), 2.0, accuracy: 0.001) // 1 * 2^1
+        XCTAssertEqual(policy.nextDelay(), 4.0, accuracy: 0.001) // 1 * 2^2
+        XCTAssertEqual(policy.nextDelay(), 8.0, accuracy: 0.001) // 1 * 2^3
+        XCTAssertEqual(policy.nextDelay(), 16.0, accuracy: 0.001) // 1 * 2^4
+        XCTAssertEqual(policy.nextDelay(), 30.0, accuracy: 0.001) // min(32, 30) = 30
+        XCTAssertEqual(policy.nextDelay(), 30.0, accuracy: 0.001) // still capped
+        XCTAssertEqual(policy.attempt, 7)
+    }
+
+    func testJitterBounds() {
+        var policy = ReconnectPolicy(
+            baseDelay: 10.0, maxDelay: 30.0,
+            multiplier: 1.0, jitterFraction: 0.25
+        )
+        // With base=10, multiplier=1, jitter=±25%: range is [7.5, 12.5]
+        for _ in 0..<100 {
+            var p = policy
+            let delay = p.nextDelay()
+            XCTAssertGreaterThanOrEqual(delay, 7.5)
+            XCTAssertLessThanOrEqual(delay, 12.5)
+        }
+        _ = policy // suppress warning
+    }
+
+    func testReset() {
+        var policy = ReconnectPolicy(jitterFraction: 0.0)
+        _ = policy.nextDelay()
+        _ = policy.nextDelay()
+        XCTAssertEqual(policy.attempt, 2)
+
+        policy.reset()
+        XCTAssertEqual(policy.attempt, 0)
+        XCTAssertEqual(policy.nextDelay(), 1.0, accuracy: 0.001)
+    }
+
+    func testRawDelay() {
+        let policy = ReconnectPolicy(
+            baseDelay: 1.0, maxDelay: 30.0,
+            multiplier: 2.0, jitterFraction: 0.25
+        )
+        XCTAssertEqual(policy.rawDelay(), 1.0, accuracy: 0.001) // No jitter, no increment
+    }
+
+    func testIsStable() {
+        let policy = ReconnectPolicy(stableThreshold: 1.0)
+        let recentConnect = Date()
+        XCTAssertFalse(policy.isStable(connectedSince: recentConnect))
+
+        let oldConnect = Date(timeIntervalSinceNow: -2.0)
+        XCTAssertTrue(policy.isStable(connectedSince: oldConnect))
+    }
+
+    func testMinimumDelay() {
+        var policy = ReconnectPolicy(
+            baseDelay: 0.001, maxDelay: 30.0,
+            multiplier: 1.0, jitterFraction: 0.0
+        )
+        let delay = policy.nextDelay()
+        XCTAssertGreaterThanOrEqual(delay, 0.01, "Minimum delay should be 10ms")
+    }
+}
+
 // MARK: - RelayEvent Tests
 
 final class RelayEventTests: XCTestCase {

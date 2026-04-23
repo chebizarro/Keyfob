@@ -11,6 +11,7 @@ public enum RelayConnectionState: Sendable, Equatable {
     case disconnected
     case connecting
     case connected
+    case reconnecting
     case closing
 }
 
@@ -63,6 +64,7 @@ public struct SubscriptionCallbacks: Sendable {
 public protocol WebSocketTransport: Sendable {
     func send(_ text: String) async throws
     func receive() async throws -> String
+    func sendPing() async throws
     func cancel()
 }
 
@@ -99,6 +101,18 @@ public final class URLSessionTransport: WebSocketTransport, @unchecked Sendable 
         }
     }
 
+    public func sendPing() async throws {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            task.sendPing { error in
+                if let error = error {
+                    cont.resume(throwing: error)
+                } else {
+                    cont.resume()
+                }
+            }
+        }
+    }
+
     public func cancel() {
         task.cancel(with: .normalClosure, reason: nil)
     }
@@ -108,8 +122,9 @@ public final class URLSessionTransport: WebSocketTransport, @unchecked Sendable 
 
 /// A connection to a single Nostr relay.
 ///
-/// Manages WebSocket lifecycle, subscription routing, and publish/OK tracking.
-/// Use `WebSocketTransport` protocol for testability — inject a mock in tests.
+/// Manages WebSocket lifecycle, subscription routing, publish/OK tracking,
+/// automatic reconnect with exponential backoff, and WebSocket ping/pong
+/// liveness detection. Use `WebSocketTransport` protocol for testability.
 public final class RelayConnection: @unchecked Sendable {
 
     /// The relay URL this connection targets.
@@ -145,7 +160,9 @@ public final class RelayConnection: @unchecked Sendable {
     // MARK: - Subscriptions
 
     private struct ActiveSubscription {
+        let filters: [NostrFilter]
         let callbacks: SubscriptionCallbacks
+        var lastEventAt: Int?
     }
 
     private var subscriptions: [String: ActiveSubscription] = [:]
@@ -161,8 +178,31 @@ public final class RelayConnection: @unchecked Sendable {
     private let transportFactory: (URL) -> WebSocketTransport
     private var receiveTask: Task<Void, Never>?
 
-    /// Callback for unhandled server frames (AUTH, NOTICE).
+    // MARK: - Reconnect
+
+    /// The reconnect policy governing backoff behavior.
+    /// Modify before `connect()` or at any time; changes take effect on next reconnect.
+    public var reconnectPolicy: ReconnectPolicy
+    private var _explicitDisconnect = false
+    private var reconnectTask: Task<Void, Never>?
+    private var _connectedSince: Date?
+
+    // MARK: - Ping/Pong
+
+    /// Interval between WebSocket pings in seconds. Default: 30s.
+    public var pingInterval: TimeInterval = 30.0
+
+    /// Seconds to wait for pong response before treating connection as dead. Default: 10s.
+    public var pongTimeout: TimeInterval = 10.0
+
+    private var pingTask: Task<Void, Never>?
+
+    // MARK: - Callbacks
+
+    /// Callback for relay AUTH challenges (NIP-42).
     public var onAuthChallenge: (@Sendable (String) -> Void)?
+
+    /// Callback for relay NOTICE messages.
     public var onNotice: (@Sendable (String) -> Void)?
 
     // MARK: - Init
@@ -171,10 +211,16 @@ public final class RelayConnection: @unchecked Sendable {
     ///
     /// - Parameters:
     ///   - url: The relay WebSocket URL (e.g., `wss://relay.example.com`).
+    ///   - reconnectPolicy: Backoff policy for automatic reconnect. Default: `.default`.
     ///   - transportFactory: Inject a custom transport factory for testing.
     ///     Defaults to `URLSessionTransport`.
-    public init(url: URL, transportFactory: ((URL) -> WebSocketTransport)? = nil) {
+    public init(
+        url: URL,
+        reconnectPolicy: ReconnectPolicy = .default,
+        transportFactory: ((URL) -> WebSocketTransport)? = nil
+    ) {
         self.url = url
+        self.reconnectPolicy = reconnectPolicy
         self.transportFactory = transportFactory ?? { url in
             let t = URLSessionTransport(url: url)
             t.connect()
@@ -184,13 +230,15 @@ public final class RelayConnection: @unchecked Sendable {
 
     // MARK: - Connect / Disconnect
 
-    /// Connect to the relay. No-op if already connected or connecting.
+    /// Connect to the relay. No-op if already connected, connecting, or reconnecting.
     public func connect() {
         lock.lock()
         guard _state == .disconnected else {
             lock.unlock()
             return
         }
+        _explicitDisconnect = false
+        reconnectPolicy.reset()
         _state = .connecting
         let observers = _stateObservers
         lock.unlock()
@@ -200,6 +248,7 @@ public final class RelayConnection: @unchecked Sendable {
         lock.lock()
         transport = ws
         _state = .connected
+        _connectedSince = Date()
         let obs2 = _stateObservers
         lock.unlock()
         for o in obs2 { o(.connected) }
@@ -207,15 +256,18 @@ public final class RelayConnection: @unchecked Sendable {
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
         }
+        startPingLoop()
     }
 
-    /// Disconnect from the relay. Sends CLOSE for all active subscriptions.
+    /// Disconnect from the relay. Cancels any pending reconnect.
+    /// Sends CLOSE for all active subscriptions.
     public func disconnect() {
         lock.lock()
-        guard _state == .connected || _state == .connecting else {
+        guard _state == .connected || _state == .connecting || _state == .reconnecting else {
             lock.unlock()
             return
         }
+        _explicitDisconnect = true
         _state = .closing
         let subs = Array(subscriptions.keys)
         let ws = transport
@@ -226,6 +278,12 @@ public final class RelayConnection: @unchecked Sendable {
         lock.unlock()
 
         for o in obs { o(.closing) }
+
+        // Cancel background tasks
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        pingTask?.cancel()
+        pingTask = nil
 
         // Cancel pending OK continuations
         for (_, continuation) in pending {
@@ -247,6 +305,7 @@ public final class RelayConnection: @unchecked Sendable {
         lock.lock()
         transport = nil
         _state = .disconnected
+        _connectedSince = nil
         let obs2 = _stateObservers
         lock.unlock()
         for o in obs2 { o(.disconnected) }
@@ -268,7 +327,7 @@ public final class RelayConnection: @unchecked Sendable {
         }
         let subId = "kf:\(nextSubIndex)"
         nextSubIndex += 1
-        subscriptions[subId] = ActiveSubscription(callbacks: callbacks)
+        subscriptions[subId] = ActiveSubscription(filters: filters, callbacks: callbacks)
         lock.unlock()
 
         let frame = ClientFrame.req(subscriptionId: subId, filters: filters)
@@ -278,7 +337,7 @@ public final class RelayConnection: @unchecked Sendable {
         return SubscriptionHandle(id: subId)
     }
 
-    /// Close an active subscription.
+    /// Close an active subscription. The subscription will NOT be restored on reconnect.
     public func closeSubscription(_ handle: SubscriptionHandle) throws {
         lock.lock()
         guard subscriptions.removeValue(forKey: handle.id) != nil else {
@@ -288,9 +347,11 @@ public final class RelayConnection: @unchecked Sendable {
         let ws = transport
         lock.unlock()
 
-        let frame = ClientFrame.close(subscriptionId: handle.id)
-        let json = try frame.serialize()
-        Task { try? await ws?.send(json) }
+        if let ws = ws {
+            let frame = ClientFrame.close(subscriptionId: handle.id)
+            let json = try frame.serialize()
+            Task { try? await ws.send(json) }
+        }
     }
 
     // MARK: - Publish
@@ -367,7 +428,7 @@ public final class RelayConnection: @unchecked Sendable {
             } catch {
                 // Connection dropped
                 if !Task.isCancelled {
-                    setState(.disconnected)
+                    handleConnectionLoss()
                 }
                 break
             }
@@ -385,9 +446,17 @@ public final class RelayConnection: @unchecked Sendable {
         switch frame {
         case .event(let subId, let event):
             lock.lock()
-            let sub = subscriptions[subId]
-            lock.unlock()
-            sub?.callbacks.onEvent(event)
+            // Track the latest event timestamp for subscription restoration
+            if var sub = subscriptions[subId] {
+                if sub.lastEventAt == nil || event.created_at > (sub.lastEventAt ?? 0) {
+                    sub.lastEventAt = event.created_at
+                    subscriptions[subId] = sub
+                }
+                lock.unlock()
+                sub.callbacks.onEvent(event)
+            } else {
+                lock.unlock()
+            }
 
         case .ok(let eventId, let accepted, let message):
             lock.lock()
@@ -412,6 +481,191 @@ public final class RelayConnection: @unchecked Sendable {
 
         case .auth(let challenge):
             onAuthChallenge?(challenge)
+        }
+    }
+
+    // MARK: - Connection Loss & Reconnect
+
+    /// Called when the receive loop detects a connection drop.
+    private func handleConnectionLoss() {
+        lock.lock()
+        guard !_explicitDisconnect else {
+            lock.unlock()
+            return
+        }
+
+        // Check if connection was stable long enough to reset backoff
+        if let since = _connectedSince, reconnectPolicy.isStable(connectedSince: since) {
+            reconnectPolicy.reset()
+        }
+
+        let ws = transport
+        let pending = pendingOK
+        pendingOK.removeAll()
+        // Keep subscriptions — they'll be restored on reconnect
+        lock.unlock()
+
+        // Cancel current transport and ping
+        pingTask?.cancel()
+        pingTask = nil
+        ws?.cancel()
+
+        // Cancel pending OK continuations (publish results are lost on disconnect)
+        for (_, continuation) in pending {
+            continuation.resume(throwing: RelayConnectionError.disconnected)
+        }
+
+        guard reconnectPolicy.isEnabled else {
+            setState(.disconnected)
+            return
+        }
+
+        setState(.reconnecting)
+
+        lock.lock()
+        transport = nil
+        _connectedSince = nil
+        lock.unlock()
+
+        reconnectTask = Task { [weak self] in
+            await self?.reconnectLoop()
+        }
+    }
+
+    /// Reconnect loop: wait for backoff, create transport, restore subscriptions.
+    private func reconnectLoop() async {
+        while !Task.isCancelled {
+            lock.lock()
+            let delay = reconnectPolicy.nextDelay()
+            lock.unlock()
+
+            do {
+                try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            } catch {
+                break // Cancelled (explicit disconnect)
+            }
+
+            guard !Task.isCancelled else { break }
+
+            // Attempt to create a new transport
+            let ws = transportFactory(url)
+
+            lock.lock()
+            guard !_explicitDisconnect else {
+                lock.unlock()
+                ws.cancel()
+                break
+            }
+            transport = ws
+            _state = .connected
+            _connectedSince = Date()
+            let observers = _stateObservers
+            lock.unlock()
+
+            for o in observers { o(.connected) }
+
+            // Restore active subscriptions with updated `since` timestamps
+            restoreSubscriptions()
+
+            // Start receive and ping loops
+            receiveTask = Task { [weak self] in
+                await self?.receiveLoop()
+            }
+            startPingLoop()
+
+            break // Reconnected; receive loop takes over
+        }
+    }
+
+    /// Re-send REQ for all active subscriptions after reconnect.
+    /// Updates `since` parameter to avoid duplicate events.
+    private func restoreSubscriptions() {
+        lock.lock()
+        let subs = subscriptions
+        let ws = transport
+        lock.unlock()
+
+        for (subId, sub) in subs {
+            var filters = sub.filters
+            if let lastAt = sub.lastEventAt {
+                filters = filters.map { filter in
+                    var f = filter
+                    f.since = max(f.since ?? 0, lastAt)
+                    return f
+                }
+            }
+            let frame = ClientFrame.req(subscriptionId: subId, filters: filters)
+            if let json = try? frame.serialize() {
+                Task { try? await ws?.send(json) }
+            }
+        }
+    }
+
+    // MARK: - Ping / Pong Liveness
+
+    private func startPingLoop() {
+        pingTask?.cancel()
+        pingTask = Task { [weak self] in
+            await self?.pingLoop()
+        }
+    }
+
+    private func pingLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: UInt64(pingInterval * 1_000_000_000))
+            } catch {
+                break // Cancelled
+            }
+
+            guard !Task.isCancelled else { break }
+
+            let pongOk = await pingOnce()
+            if !pongOk && !Task.isCancelled {
+                // Ping timeout — treat as connection loss
+                lock.lock()
+                let explicit = _explicitDisconnect
+                lock.unlock()
+                if !explicit {
+                    receiveTask?.cancel()
+                    receiveTask = nil
+                    handleConnectionLoss()
+                }
+                break
+            }
+        }
+    }
+
+    /// Send a single ping and wait for pong with timeout.
+    /// Returns `true` if pong received within `pongTimeout`, `false` otherwise.
+    private func pingOnce() async -> Bool {
+        lock.lock()
+        let ws = transport
+        lock.unlock()
+
+        guard let ws = ws else { return false }
+
+        return await withTaskGroup(of: Bool.self) { group in
+            group.addTask {
+                do {
+                    try await ws.sendPing()
+                    return true
+                } catch {
+                    return false
+                }
+            }
+            group.addTask { [pongTimeout] in
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(pongTimeout * 1_000_000_000))
+                    return false // Timed out
+                } catch {
+                    return false // Cancelled
+                }
+            }
+            // First result wins
+            let result = await group.next() ?? false
+            group.cancelAll()
+            return result
         }
     }
 }
