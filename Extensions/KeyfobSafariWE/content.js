@@ -58,6 +58,7 @@
   function onceMessage(expectedId, timeoutMs = DEFAULT_TIMEOUT_MS) {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        console.warn('[Keyfob] onceMessage timeout: no response within %dms (cbId=%s)', timeoutMs, expectedId);
         window.removeEventListener('message', onMsg);
         reject(new Error('Keyfob timeout'));
       }, timeoutMs);
@@ -95,12 +96,19 @@
       }
 
       // Open Universal Link
-      window.open(url, '_blank', 'noopener');
+      const popup = window.open(url, '_blank', 'noopener');
+      if (!popup) {
+        console.warn('[Keyfob] handoff: window.open returned null (popup may be blocked), path=%s attempt=%d', path, attempt);
+      }
 
       try {
         const result = await onceMessage(CB_ID, DEFAULT_TIMEOUT_MS);
         removeStatus();
-        if (!result || !result.ok) throw new Error(result?.msg || 'Keyfob error');
+        if (!result || !result.ok) {
+          const errMsg = result?.msg || 'Keyfob error';
+          console.warn('[Keyfob] handoff: error response from signer, path=%s attempt=%d msg=%s', path, attempt, errMsg);
+          throw new Error(errMsg);
+        }
         return result;
       } catch (e) {
         lastError = e;

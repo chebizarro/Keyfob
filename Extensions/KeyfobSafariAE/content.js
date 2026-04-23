@@ -16,13 +16,18 @@
     const data = event.message || {};
     const reqId = data.reqId || "";
     const wait = pending.get(reqId);
-    if (!wait) return;
+    if (!wait) {
+      if (reqId) console.warn('[Keyfob] unmatched keyfob_response: reqId=%s not in pending map (%d pending)', reqId, pending.size);
+      return;
+    }
     clearTimeout(wait.timer);
     pending.delete(reqId);
     if (String(data.ok) === "1") {
       wait.resolve(data);
     } else {
-      const err = new Error(data.msg || "Keyfob error");
+      const errMsg = data.msg || 'Keyfob error';
+      console.warn('[Keyfob] response error: reqId=%s msg=%s code=%s', reqId, errMsg, data.code || 'error');
+      const err = new Error(errMsg);
       err.code = data.code || "error";
       wait.reject(err);
     }
@@ -32,6 +37,7 @@
     const reqId = uuid();
     const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
+        console.warn('[Keyfob] sendAndWait timeout: no response within %dms, message=%s reqId=%s', TIMEOUT_MS, messageName, reqId);
         pending.delete(reqId);
         reject(new Error("Keyfob: no response from signer (timeout)"));
       }, TIMEOUT_MS);

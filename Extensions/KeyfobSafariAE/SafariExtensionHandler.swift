@@ -1,9 +1,17 @@
 import SafariServices
 import Foundation
+import os.log
+
+private let log = OSLog(subsystem: "com.keyfob.safari-extension", category: "handler")
 
 final class SafariExtensionHandler: SFSafariExtensionHandler {
-    // Update this to your actual XPC service bundle identifier
-    private let xpcServiceName = "TODO.com.yourorg.keyfob.mac.xpc"
+    // Reads from Info.plist key KEYFOB_XPC_SERVICE_NAME, set via Keyfob.xcconfig.
+    private let xpcServiceName: String = {
+        if let override = Bundle.main.infoDictionary?["KEYFOB_XPC_SERVICE_NAME"] as? String, !override.isEmpty {
+            return override
+        }
+        return "com.example.keyfob.mac.xpc"
+    }()
 
     override func messageReceived(withName messageName: String, from page: SFSafariPage, userInfo: [String : Any]?) {
         let reqId = (userInfo?["reqId"] as? String) ?? ""
@@ -33,6 +41,7 @@ final class SafariExtensionHandler: SFSafariExtensionHandler {
                 ])
             }
         default:
+            os_log(.error, log: log, "[Keyfob] unrecognized message name: %{public}@, reqId=%{public}@", messageName, reqId)
             break
         }
     }
@@ -47,12 +56,17 @@ final class SafariExtensionHandler: SFSafariExtensionHandler {
         connection.resume()
         let bundleID = Bundle.main.bundleIdentifier ?? ""
         let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+            os_log(.error, log: log, "[Keyfob] getPublicKey XPC proxy error: %{public}@", error.localizedDescription)
             completion(.err("xpc: \(error.localizedDescription)"))
             connection.invalidate()
         } as? KeyfobXPCProtocol
         proxy?.getPublicKey(clientBundleID: bundleID) { pubkey, err in
             defer { connection.invalidate() }
-            if let err = err { completion(.err(err.localizedDescription)); return }
+            if let err = err {
+                os_log(.error, log: log, "[Keyfob] getPublicKey XPC call error: %{public}@", err.localizedDescription)
+                completion(.err(err.localizedDescription))
+                return
+            }
             completion(.pubkey(pubkey ?? ""))
         }
     }
@@ -64,12 +78,17 @@ final class SafariExtensionHandler: SFSafariExtensionHandler {
         connection.resume()
         let bundleID = Bundle.main.bundleIdentifier ?? ""
         let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+            os_log(.error, log: log, "[Keyfob] sign XPC proxy error: %{public}@", error.localizedDescription)
             completion(.err("xpc: \(error.localizedDescription)"))
             connection.invalidate()
         } as? KeyfobXPCProtocol
         proxy?.sign(eventJSON: data, clientBundleID: bundleID, originHint: nil) { respData, err in
             defer { connection.invalidate() }
-            if let err = err { completion(.err(err.localizedDescription)); return }
+            if let err = err {
+                os_log(.error, log: log, "[Keyfob] sign XPC call error: %{public}@", err.localizedDescription)
+                completion(.err(err.localizedDescription))
+                return
+            }
             guard let respData = respData else { completion(.err("empty response")); return }
             do {
                 let resp = try JSONDecoder().decode(SignatureResponse.self, from: respData)
