@@ -1,6 +1,6 @@
 import XCTest
 import CryptoKit
-import NostrSDK
+@testable import NostrSDK
 @testable import KeyfobCrypto
 
 final class SignerTests: XCTestCase {
@@ -174,6 +174,124 @@ final class SignerTests: XCTestCase {
         // Each should have a distinct description
         let descriptions = Set(errors.map { "\($0)" })
         XCTAssertEqual(descriptions.count, errors.count, "All error cases should be distinct")
+    }
+
+    // MARK: - Tag Conversion
+
+    func testTagsToSDKEmptyTags() {
+        let sdkTags = Signer.tagsToSDK([])
+        XCTAssertEqual(sdkTags.count, 0)
+    }
+
+    func testTagsToSDKBasicTags() {
+        let tags: [[String]] = [["p", "abc"], ["e", "def"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+        XCTAssertEqual(sdkTags.count, 2)
+        XCTAssertEqual(sdkTags[0].name, "p")
+        XCTAssertEqual(sdkTags[0].value, "abc")
+        XCTAssertEqual(sdkTags[1].name, "e")
+        XCTAssertEqual(sdkTags[1].value, "def")
+    }
+
+    func testTagsToSDKWithOtherParameters() {
+        let tags: [[String]] = [["p", "abc", "wss://relay.example.com", "author"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+        XCTAssertEqual(sdkTags.count, 1)
+        XCTAssertEqual(sdkTags[0].name, "p")
+        XCTAssertEqual(sdkTags[0].value, "abc")
+        XCTAssertEqual(sdkTags[0].otherParameters, ["wss://relay.example.com", "author"])
+    }
+
+    func testTagsToSDKPadsSingleElementTags() {
+        // Single-element tags are padded with empty value to satisfy SDK decoder
+        let tags: [[String]] = [["p"], ["e", "valid"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+        XCTAssertEqual(sdkTags.count, 2)
+        XCTAssertEqual(sdkTags[0].name, "p")
+        XCTAssertEqual(sdkTags[0].value, "")
+        XCTAssertEqual(sdkTags[1].name, "e")
+        XCTAssertEqual(sdkTags[1].value, "valid")
+    }
+
+    func testTagsToSDKDropsEmptyTags() {
+        let tags: [[String]] = [[], ["e", "valid"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+        XCTAssertEqual(sdkTags.count, 1)
+        XCTAssertEqual(sdkTags[0].name, "e")
+    }
+
+    func testTagsRoundTrip() {
+        let original: [[String]] = [["p", "abc", "relay"], ["e", "def"], ["t", "nostr"]]
+        let sdkTags = Signer.tagsToSDK(original)
+        let roundTripped = Signer.tagsFromSDK(sdkTags)
+        XCTAssertEqual(roundTripped, original)
+    }
+
+    // MARK: - SDK EventSerializer cross-validation
+
+    func testSerializationMatchesSDKEventSerializer() {
+        // Verify our Signer.serializeNIP01 (now delegating to SDK) produces
+        // the same output as calling SDK's EventSerializer directly
+        let tags: [[String]] = [["p", "abc"], ["e", "123"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+
+        let ourSer = Signer.serializeNIP01(pubkey: "aabb", createdAt: 1000, kind: 1, tags: tags, content: "hello")
+        let sdkSer = EventSerializer.serializedEvent(withPubkey: "aabb", createdAt: 1000, kind: 1, tags: sdkTags, content: "hello")
+        XCTAssertEqual(ourSer, sdkSer, "Signer should delegate to SDK EventSerializer")
+    }
+
+    func testIdComputationMatchesSDKEventSerializer() {
+        let tags: [[String]] = [["p", "xyz"]]
+        let sdkTags = Signer.tagsToSDK(tags)
+
+        let ourId = Signer.computeNIP01Id(pubkey: "aabb", createdAt: 500, kind: 42, tags: tags, content: "test")
+        let sdkId = EventSerializer.identifierForEvent(withPubkey: "aabb", createdAt: 500, kind: 42, tags: sdkTags, content: "test")
+        XCTAssertEqual(ourId, sdkId, "Signer should delegate to SDK EventSerializer for ID computation")
+    }
+
+    // MARK: - signEvent with structured fields
+
+    func testSignEventWithStructuredFields() throws {
+        guard let sdkKeypair = NostrSDK.Keypair() else {
+            XCTFail("Failed to generate SDK Keypair")
+            return
+        }
+        let resp = try Signer().signEvent(
+            kind: 1,
+            createdAt: 1700000000,
+            tags: [["p", "abc"]],
+            content: "hello",
+            with: sdkKeypair
+        )
+
+        XCTAssertEqual(resp.pubkey, sdkKeypair.publicKey.hex)
+        XCTAssertEqual(resp.id.count, 64)
+        XCTAssertEqual(resp.sig.count, 128)
+
+        // Verify ID matches SDK computation
+        let expectedId = Signer.computeNIP01Id(
+            pubkey: sdkKeypair.publicKey.hex,
+            createdAt: 1700000000,
+            kind: 1,
+            tags: [["p", "abc"]],
+            content: "hello"
+        )
+        XCTAssertEqual(resp.id, expectedId)
+    }
+
+    func testSignEventStructuredMatchesJSON() throws {
+        guard let sdkKeypair = NostrSDK.Keypair() else {
+            XCTFail("Failed to generate SDK Keypair")
+            return
+        }
+        let json = "{\"kind\":1,\"created_at\":100,\"tags\":[[\"t\",\"nostr\"]],\"content\":\"test\"}"
+        let fromJSON = try Signer().signEvent(eventJSON: json, with: sdkKeypair)
+        let fromStructured = try Signer().signEvent(
+            kind: 1, createdAt: 100, tags: [["t", "nostr"]], content: "test", with: sdkKeypair
+        )
+        // Same event fields → same ID and pubkey
+        XCTAssertEqual(fromJSON.id, fromStructured.id)
+        XCTAssertEqual(fromJSON.pubkey, fromStructured.pubkey)
     }
 
     // MARK: - Signer.serializeNIP01

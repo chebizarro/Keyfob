@@ -24,6 +24,8 @@ public final class Signer {
         let content: String
     }
 
+    // MARK: - Signing
+
     /// Sign a Nostr event using the default Keychain identity.
     ///
     /// Loads the SDK `Keypair` from the Keychain (may trigger biometric auth),
@@ -42,42 +44,108 @@ public final class Signer {
         let evt = try JSONDecoder().decode(MinimalEvent.self, from: data)
 
         let pubkeyHex = sdkKeypair.publicKey.hex
-        let idHex = Signer.computeNIP01Id(
-            pubkey: pubkeyHex,
+        let sdkTags = Signer.tagsToSDK(evt.tags)
+        let idHex = EventSerializer.identifierForEvent(
+            withPubkey: pubkeyHex,
             createdAt: Int64(evt.created_at),
             kind: evt.kind,
-            tags: evt.tags,
+            tags: sdkTags,
             content: evt.content
         )
 
-        // Sign using SDK's ContentSigning protocol (Schnorr over secp256k1)
-        struct _SignerUtil: ContentSigning {}
-        let sigHex = try _SignerUtil().signatureForContent(idHex, privateKey: sdkKeypair.privateKey.hex)
-
+        struct _Signing: ContentSigning {}
+        let sigHex = try _Signing().signatureForContent(idHex, privateKey: sdkKeypair.privateKey.hex)
         return SignatureResponse(id: idHex, sig: sigHex, pubkey: pubkeyHex)
     }
 
-    /// Compute the NIP-01 event id: SHA-256 of the canonical `[0, pubkey, created_at, kind, tags, content]` array.
+    /// Sign a `KeyfobCore.NostrEvent` directly, avoiding the JSON parse round-trip.
     ///
-    /// This is the authoritative id computation used for signing. The serialization follows NIP-01:
-    /// compact JSON array with no extra whitespace.
-    public static func computeNIP01Id(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
-        let ser = serializeNIP01(pubkey: pubkey, createdAt: createdAt, kind: kind, tags: tags, content: content)
-        let digest = SHA256.hash(data: ser.data(using: .utf8)!)
-        return digest.map { String(format: "%02x", $0) }.joined()
+    /// Computes the NIP-01 event id from the event fields using SDK's `EventSerializer`,
+    /// then produces a Schnorr signature using the provided keypair.
+    public func signEvent(kind: Int, createdAt: Int, tags: [[String]], content: String, with sdkKeypair: NostrSDK.Keypair) throws -> SignatureResponse {
+        let pubkeyHex = sdkKeypair.publicKey.hex
+        let sdkTags = Signer.tagsToSDK(tags)
+        let idHex = EventSerializer.identifierForEvent(
+            withPubkey: pubkeyHex,
+            createdAt: Int64(createdAt),
+            kind: kind,
+            tags: sdkTags,
+            content: content
+        )
+
+        struct _Signing: ContentSigning {}
+        let sigHex = try _Signing().signatureForContent(idHex, privateKey: sdkKeypair.privateKey.hex)
+        return SignatureResponse(id: idHex, sig: sigHex, pubkey: pubkeyHex)
     }
 
-    /// Produce the NIP-01 canonical serialization array string (before hashing).
-    /// Exposed as internal for testability via @testable import.
+    // MARK: - NIP-01 Serialization (delegating to SDK EventSerializer)
+
+    /// Compute the NIP-01 event id: SHA-256 of the canonical serialized event.
+    ///
+    /// Delegates to SDK's `EventSerializer.identifierForEvent()`.
+    public static func computeNIP01Id(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
+        let sdkTags = tagsToSDK(tags)
+        return EventSerializer.identifierForEvent(
+            withPubkey: pubkey,
+            createdAt: createdAt,
+            kind: kind,
+            tags: sdkTags,
+            content: content
+        )
+    }
+
+    /// Produce the NIP-01 canonical serialization: `[0,<pubkey>,<created_at>,<kind>,<tags>,<content>]`.
+    ///
+    /// Delegates to SDK's `EventSerializer.serializedEvent()`.
     static func serializeNIP01(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .withoutEscapingSlashes
-        let tagsString: String
-        if let tagsData = try? encoder.encode(tags) {
-            tagsString = String(data: tagsData, encoding: .utf8) ?? "[]"
-        } else { tagsString = "[]" }
-        let contentString: String
-        if let cdata = try? encoder.encode(content) { contentString = String(data: cdata, encoding: .utf8) ?? "\"\"" } else { contentString = "\"\"" }
-        return "[0,\"\(pubkey)\",\(createdAt),\(kind),\(tagsString),\(contentString)]"
+        let sdkTags = tagsToSDK(tags)
+        return EventSerializer.serializedEvent(
+            withPubkey: pubkey,
+            createdAt: createdAt,
+            kind: kind,
+            tags: sdkTags,
+            content: content
+        )
+    }
+
+    // MARK: - Tag Conversion
+
+    /// Convert `[[String]]` tags to SDK `[Tag]` via JSON round-trip.
+    ///
+    /// SDK's `Tag.init` is module-internal, so we encode `[[String]]` and decode as `[Tag]`.
+    /// Tag's Codable implementation uses an unkeyed container: `["name", "value", ...otherParams]`,
+    /// which is identical to `[String]` encoding, so the round-trip is lossless.
+    ///
+    /// Tags with fewer than 2 elements are padded with empty strings to satisfy the SDK's decoder
+    /// (which requires at least a name and a value). Empty tags are dropped.
+    ///
+    /// Performance: negligible for typical event tag counts (< 100 tags).
+    public static func tagsToSDK(_ tags: [[String]]) -> [NostrSDK.Tag] {
+        guard !tags.isEmpty else { return [] }
+        // SDK Tag decoder requires at least 2 elements (name + value).
+        // Pad short tags with empty strings to preserve them in serialization.
+        let normalizedTags = tags.compactMap { tag -> [String]? in
+            guard !tag.isEmpty else { return nil }
+            if tag.count < 2 {
+                return tag + Array(repeating: "", count: 2 - tag.count)
+            }
+            return tag
+        }
+        guard !normalizedTags.isEmpty else { return [] }
+        guard let data = try? JSONEncoder().encode(normalizedTags),
+              let sdkTags = try? JSONDecoder().decode([NostrSDK.Tag].self, from: data) else {
+            return []
+        }
+        return sdkTags
+    }
+
+    /// Convert SDK `[Tag]` back to `[[String]]` via JSON round-trip.
+    public static func tagsFromSDK(_ sdkTags: [NostrSDK.Tag]) -> [[String]] {
+        guard !sdkTags.isEmpty else { return [] }
+        guard let data = try? JSONEncoder().encode(sdkTags),
+              let rawTags = try? JSONDecoder().decode([[String]].self, from: data) else {
+            return []
+        }
+        return rawTags
     }
 }
