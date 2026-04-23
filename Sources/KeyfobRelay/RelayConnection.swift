@@ -227,6 +227,10 @@ public final class RelayConnection: @unchecked Sendable {
     /// Callback for relay NOTICE messages.
     public var onNotice: (@Sendable (String) -> Void)?
 
+    /// Optional telemetry observer for connection lifecycle, subscription,
+    /// auth, and publish events. Wire to your logging backend.
+    public var telemetry: (@Sendable (RelayTelemetryEvent) -> Void)?
+
     // MARK: - Init
 
     /// Create a relay connection.
@@ -274,6 +278,7 @@ public final class RelayConnection: @unchecked Sendable {
         let obs2 = _stateObservers
         lock.unlock()
         for o in obs2 { o(.connected) }
+        telemetry?(.connected(relay: url))
 
         receiveTask = Task { [weak self] in
             await self?.receiveLoop()
@@ -334,6 +339,7 @@ public final class RelayConnection: @unchecked Sendable {
         let obs2 = _stateObservers
         lock.unlock()
         for o in obs2 { o(.disconnected) }
+        telemetry?(.disconnected(relay: url, reason: "explicit"))
     }
 
     // MARK: - Subscribe
@@ -358,6 +364,7 @@ public final class RelayConnection: @unchecked Sendable {
         let frame = ClientFrame.req(subscriptionId: subId, filters: filters)
         let json = try frame.serialize()
         Task { try? await ws.send(json) }
+        telemetry?(.subscriptionOpened(relay: url, subscriptionId: subId, filterCount: filters.count))
 
         return SubscriptionHandle(id: subId)
     }
@@ -396,6 +403,8 @@ public final class RelayConnection: @unchecked Sendable {
 
         let frame = ClientFrame.event(event)
         let json = try frame.serialize()
+
+        telemetry?(.eventPublished(relay: url, eventId: event.id, kind: event.kind))
 
         return try await withCheckedThrowingContinuation { continuation in
             lock.lock()
@@ -493,6 +502,7 @@ public final class RelayConnection: @unchecked Sendable {
                     let pendingSubs = _pendingAuthSubs
                     _pendingAuthSubs.removeAll()
                     lock.unlock()
+                    telemetry?(.authSucceeded(relay: url))
                     onAuthStateChange?(.authenticated)
                     retryPendingAuthSubs(pendingSubs)
                 } else {
@@ -501,6 +511,7 @@ public final class RelayConnection: @unchecked Sendable {
                     let pendingSubs = _pendingAuthSubs
                     _pendingAuthSubs.removeAll()
                     lock.unlock()
+                    telemetry?(.authFailed(relay: url, message: message))
                     onAuthStateChange?(failState)
                     // Notify pending auth subs that auth failed
                     for (_, sub) in pendingSubs {
@@ -511,12 +522,18 @@ public final class RelayConnection: @unchecked Sendable {
             }
             let continuation = pendingOK.removeValue(forKey: eventId)
             lock.unlock()
+            if accepted {
+                telemetry?(.publishAccepted(relay: url, eventId: eventId))
+            } else {
+                telemetry?(.publishRejected(relay: url, eventId: eventId, reason: message))
+            }
             continuation?.resume(returning: OKResult(eventId: eventId, accepted: accepted, message: message))
 
         case .eose(let subId):
             lock.lock()
             let sub = subscriptions[subId]
             lock.unlock()
+            telemetry?(.eoseReceived(relay: url, subscriptionId: subId))
             sub?.callbacks.onEOSE()
 
         case .closed(let subId, let message):
@@ -527,10 +544,12 @@ public final class RelayConnection: @unchecked Sendable {
                     _pendingAuthSubs[subId] = sub
                 }
                 lock.unlock()
+                telemetry?(.subscriptionClosed(relay: url, subscriptionId: subId, reason: message))
                 // Don't call onClosed — subscription will be retried after auth
             } else {
                 let sub = subscriptions.removeValue(forKey: subId)
                 lock.unlock()
+                telemetry?(.subscriptionClosed(relay: url, subscriptionId: subId, reason: message))
                 sub?.callbacks.onClosed(message)
             }
 
@@ -538,6 +557,7 @@ public final class RelayConnection: @unchecked Sendable {
             onNotice?(message)
 
         case .auth(let challenge):
+            telemetry?(.authChallengeReceived(relay: url))
             if let signer = authSigner {
                 handleAuthChallenge(challenge: challenge, signer: signer)
             } else {
@@ -576,6 +596,7 @@ public final class RelayConnection: @unchecked Sendable {
                 self.onAuthStateChange?(.authenticating)
 
                 try self.send(.auth(event))
+                self.telemetry?(.authResponseSent(relay: self.url))
             } catch {
                 self.lock.lock()
                 let failState = AuthState.failed("signing failed: \(error.localizedDescription)")
@@ -633,6 +654,7 @@ public final class RelayConnection: @unchecked Sendable {
         for (_, continuation) in pending {
             continuation.resume(throwing: RelayConnectionError.disconnected)
         }
+        telemetry?(.disconnected(relay: url, reason: "connectionLost"))
 
         guard reconnectPolicy.isEnabled else {
             setState(.disconnected)
@@ -655,11 +677,16 @@ public final class RelayConnection: @unchecked Sendable {
     }
 
     /// Reconnect loop: wait for backoff, create transport, restore subscriptions.
+    private var _reconnectAttempt = 0
+
     private func reconnectLoop() async {
+        _reconnectAttempt = 0
         while !Task.isCancelled {
+            _reconnectAttempt += 1
             lock.lock()
             let delay = reconnectPolicy.nextDelay()
             lock.unlock()
+            telemetry?(.reconnectAttempt(relay: url, attempt: _reconnectAttempt, delayMs: Int(delay * 1000)))
 
             do {
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
@@ -685,6 +712,7 @@ public final class RelayConnection: @unchecked Sendable {
             lock.unlock()
 
             for o in observers { o(.connected) }
+            telemetry?(.reconnectSuccess(relay: url, attempt: _reconnectAttempt))
 
             // Restore active subscriptions with updated `since` timestamps
             restoreSubscriptions()
@@ -720,6 +748,7 @@ public final class RelayConnection: @unchecked Sendable {
             if let json = try? frame.serialize() {
                 Task { try? await ws?.send(json) }
             }
+            telemetry?(.subscriptionRestored(relay: url, subscriptionId: subId))
         }
     }
 
