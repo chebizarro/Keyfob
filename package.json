@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "name": "keyfob-web-tests",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^3.1.0",
+    "jsdom": "^26.1.0"
+  }
+}
