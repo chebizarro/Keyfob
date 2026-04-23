@@ -17,7 +17,12 @@
           const params = new URLSearchParams(window.location.search);
           const payload = {};
           for (const [k,v] of params.entries()) payload[k] = v;
-          window.opener && window.opener.postMessage({ __keyfob_cb__: cbId, payload }, '*');
+          // Determine target origin from the 'origin' query param or fallback to opener's origin.
+          // Never use '*' — refuse to post if no trusted origin can be determined.
+          const targetOrigin = params.get('origin') || (document.referrer ? new URL(document.referrer).origin : null);
+          if (targetOrigin && window.opener) {
+            window.opener.postMessage({ __keyfob_cb__: cbId, payload }, targetOrigin);
+          }
         } catch(e) {
           // ignore
         }

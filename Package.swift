@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "Keyfob",
+    defaultLocalization: "en",
     platforms: [
         .iOS(.v15),
         .macOS(.v12)
@@ -13,7 +14,8 @@ let package = Package(
         .library(name: "KeyfobPolicy", targets: ["KeyfobPolicy"]),
         .library(name: "KeyfobBridge", targets: ["KeyfobBridge"]),
         .library(name: "KeyfobUI", targets: ["KeyfobUI"]),
-        .library(name: "KeyfobWebShared", targets: ["KeyfobWebShared"])
+        .library(name: "KeyfobWebShared", targets: ["KeyfobWebShared"]),
+        .library(name: "KeyfobRelay", targets: ["KeyfobRelay"])
     ],
     dependencies: [
         // Nostr SDK for iOS/macOS (secp256k1 + Nostr primitives)
@@ -78,12 +80,23 @@ let package = Package(
         .target(
             name: "KeyfobWebShared",
             dependencies: [],
-            path: "Sources/KeyfobWebShared"
+            path: "Sources/KeyfobWebShared",
+            exclude: ["nostr-provider.ts"]
         ),
         .testTarget(
             name: "KeyfobWebSharedTests",
             dependencies: ["KeyfobWebShared"],
             path: "Tests/KeyfobWebSharedTests"
+        ),
+        .target(
+            name: "KeyfobRelay",
+            dependencies: [],
+            path: "Sources/KeyfobRelay"
+        ),
+        .testTarget(
+            name: "KeyfobRelayTests",
+            dependencies: ["KeyfobRelay"],
+            path: "Tests/KeyfobRelayTests"
         )
     ]
 )
