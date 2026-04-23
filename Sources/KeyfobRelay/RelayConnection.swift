@@ -197,9 +197,31 @@ public final class RelayConnection: @unchecked Sendable {
 
     private var pingTask: Task<Void, Never>?
 
+    // MARK: - Auth (NIP-42)
+
+    /// Optional signer for automatic NIP-42 AUTH handling.
+    /// When set, AUTH challenges are automatically signed and sent.
+    /// When nil, AUTH challenges are passed to `onAuthChallenge` callback.
+    public var authSigner: RelayAuthSigner?
+
+    private var _authState: AuthState = .notRequired
+    private var _authEventId: String?
+    private var _pendingAuthSubs: [String: ActiveSubscription] = [:]
+
+    /// Current NIP-42 auth state.
+    public var authState: AuthState {
+        lock.lock()
+        defer { lock.unlock() }
+        return _authState
+    }
+
+    /// Callback for auth state transitions.
+    public var onAuthStateChange: (@Sendable (AuthState) -> Void)?
+
     // MARK: - Callbacks
 
     /// Callback for relay AUTH challenges (NIP-42).
+    /// Only called when `authSigner` is nil.
     public var onAuthChallenge: (@Sendable (String) -> Void)?
 
     /// Callback for relay NOTICE messages.
@@ -269,6 +291,9 @@ public final class RelayConnection: @unchecked Sendable {
         }
         _explicitDisconnect = true
         _state = .closing
+        _authState = .notRequired
+        _authEventId = nil
+        _pendingAuthSubs.removeAll()
         let subs = Array(subscriptions.keys)
         let ws = transport
         let pending = pendingOK
@@ -460,6 +485,30 @@ public final class RelayConnection: @unchecked Sendable {
 
         case .ok(let eventId, let accepted, let message):
             lock.lock()
+            // Check if this OK is for our auth event
+            if let authId = _authEventId, eventId == authId {
+                _authEventId = nil
+                if accepted {
+                    _authState = .authenticated
+                    let pendingSubs = _pendingAuthSubs
+                    _pendingAuthSubs.removeAll()
+                    lock.unlock()
+                    onAuthStateChange?(.authenticated)
+                    retryPendingAuthSubs(pendingSubs)
+                } else {
+                    let failState = AuthState.failed(message)
+                    _authState = failState
+                    let pendingSubs = _pendingAuthSubs
+                    _pendingAuthSubs.removeAll()
+                    lock.unlock()
+                    onAuthStateChange?(failState)
+                    // Notify pending auth subs that auth failed
+                    for (_, sub) in pendingSubs {
+                        sub.callbacks.onClosed("auth-required: authentication failed")
+                    }
+                }
+                return
+            }
             let continuation = pendingOK.removeValue(forKey: eventId)
             lock.unlock()
             continuation?.resume(returning: OKResult(eventId: eventId, accepted: accepted, message: message))
@@ -472,15 +521,85 @@ public final class RelayConnection: @unchecked Sendable {
 
         case .closed(let subId, let message):
             lock.lock()
-            let sub = subscriptions.removeValue(forKey: subId)
-            lock.unlock()
-            sub?.callbacks.onClosed(message)
+            // If closed with auth-required and we have a signer, queue for retry
+            if message.hasPrefix("auth-required:") && authSigner != nil {
+                if let sub = subscriptions.removeValue(forKey: subId) {
+                    _pendingAuthSubs[subId] = sub
+                }
+                lock.unlock()
+                // Don't call onClosed — subscription will be retried after auth
+            } else {
+                let sub = subscriptions.removeValue(forKey: subId)
+                lock.unlock()
+                sub?.callbacks.onClosed(message)
+            }
 
         case .notice(let message):
             onNotice?(message)
 
         case .auth(let challenge):
-            onAuthChallenge?(challenge)
+            if let signer = authSigner {
+                handleAuthChallenge(challenge: challenge, signer: signer)
+            } else {
+                onAuthChallenge?(challenge)
+            }
+        }
+    }
+
+    // MARK: - Auth Challenge Handling
+
+    /// Handle an AUTH challenge from the relay by signing and sending a kind 22242 event.
+    private func handleAuthChallenge(challenge: String, signer: RelayAuthSigner) {
+        lock.lock()
+        _authState = .challenged(challenge)
+        lock.unlock()
+        onAuthStateChange?(.challenged(challenge))
+
+        Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                let event = try await signer.signAuthEvent(challenge: challenge, relayURL: self.url)
+                // Validate that it's kind 22242
+                guard event.kind == 22242 else {
+                    self.lock.lock()
+                    let failState = AuthState.failed("signer returned wrong kind: \(event.kind)")
+                    self._authState = failState
+                    self.lock.unlock()
+                    self.onAuthStateChange?(failState)
+                    return
+                }
+
+                self.lock.lock()
+                self._authState = .authenticating
+                self._authEventId = event.id
+                self.lock.unlock()
+                self.onAuthStateChange?(.authenticating)
+
+                try self.send(.auth(event))
+            } catch {
+                self.lock.lock()
+                let failState = AuthState.failed("signing failed: \(error.localizedDescription)")
+                self._authState = failState
+                self.lock.unlock()
+                self.onAuthStateChange?(failState)
+            }
+        }
+    }
+
+    /// Re-send REQ for subscriptions that were CLOSED with "auth-required:" after auth success.
+    private func retryPendingAuthSubs(_ pendingSubs: [String: ActiveSubscription]) {
+        lock.lock()
+        let ws = transport
+        for (subId, sub) in pendingSubs {
+            subscriptions[subId] = sub
+        }
+        lock.unlock()
+
+        for (subId, sub) in pendingSubs {
+            let frame = ClientFrame.req(subscriptionId: subId, filters: sub.filters)
+            if let json = try? frame.serialize() {
+                Task { try? await ws?.send(json) }
+            }
         }
     }
 
@@ -525,6 +644,9 @@ public final class RelayConnection: @unchecked Sendable {
         lock.lock()
         transport = nil
         _connectedSince = nil
+        _authState = .notRequired
+        _authEventId = nil
+        _pendingAuthSubs.removeAll()
         lock.unlock()
 
         reconnectTask = Task { [weak self] in
