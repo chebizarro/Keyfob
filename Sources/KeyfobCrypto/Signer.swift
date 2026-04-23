@@ -24,22 +24,52 @@ public final class Signer {
         let content: String
     }
 
+    /// Sign a Nostr event using the default Keychain identity.
+    ///
+    /// Loads the SDK `Keypair` from the Keychain (may trigger biometric auth),
+    /// computes the NIP-01 event id, and produces a Schnorr signature.
     public func signEvent(eventJSON: String) throws -> SignatureResponse {
-        guard let data = eventJSON.data(using: .utf8) else { throw SignerError.invalidEvent }
-        let evt = try JSONDecoder().decode(MinimalEvent.self, from: data)
-        // Load private key (biometry-gated)
-        let skData = try KeyManager.shared.readPrivateKeyWithBiometrics()
-        guard let priv = NostrSDK.PrivateKey(dataRepresentation: skData), let kp = NostrSDK.Keypair(privateKey: priv) else {
-            throw SignerError.keyLoadFailed
-        }
-        let idHex = Self.computeNIP01Id(pubkey: kp.publicKey.hex, createdAt: Int64(evt.created_at), kind: evt.kind, tags: evt.tags, content: evt.content)
-        struct _SignerUtil: ContentSigning {}
-        let sigHex = try _SignerUtil().signatureForContent(idHex, privateKey: priv.hex)
-        return SignatureResponse(id: idHex, sig: sigHex, pubkey: kp.publicKey.hex)
+        let sdkKeypair = try KeyManager.shared.loadSDKKeypair()
+        return try signEvent(eventJSON: eventJSON, with: sdkKeypair)
     }
 
-    private static func computeNIP01Id(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
-        // Serialize as compact JSON array per NIP-01
+    /// Sign a Nostr event using a provided SDK `Keypair`.
+    ///
+    /// Use this overload when you already have the keypair (e.g., after biometric
+    /// authentication) to avoid redundant Keychain access.
+    public func signEvent(eventJSON: String, with sdkKeypair: NostrSDK.Keypair) throws -> SignatureResponse {
+        guard let data = eventJSON.data(using: .utf8) else { throw SignerError.invalidEvent }
+        let evt = try JSONDecoder().decode(MinimalEvent.self, from: data)
+
+        let pubkeyHex = sdkKeypair.publicKey.hex
+        let idHex = Signer.computeNIP01Id(
+            pubkey: pubkeyHex,
+            createdAt: Int64(evt.created_at),
+            kind: evt.kind,
+            tags: evt.tags,
+            content: evt.content
+        )
+
+        // Sign using SDK's ContentSigning protocol (Schnorr over secp256k1)
+        struct _SignerUtil: ContentSigning {}
+        let sigHex = try _SignerUtil().signatureForContent(idHex, privateKey: sdkKeypair.privateKey.hex)
+
+        return SignatureResponse(id: idHex, sig: sigHex, pubkey: pubkeyHex)
+    }
+
+    /// Compute the NIP-01 event id: SHA-256 of the canonical `[0, pubkey, created_at, kind, tags, content]` array.
+    ///
+    /// This is the authoritative id computation used for signing. The serialization follows NIP-01:
+    /// compact JSON array with no extra whitespace.
+    public static func computeNIP01Id(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
+        let ser = serializeNIP01(pubkey: pubkey, createdAt: createdAt, kind: kind, tags: tags, content: content)
+        let digest = SHA256.hash(data: ser.data(using: .utf8)!)
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Produce the NIP-01 canonical serialization array string (before hashing).
+    /// Exposed as internal for testability via @testable import.
+    static func serializeNIP01(pubkey: String, createdAt: Int64, kind: Int, tags: [[String]], content: String) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .withoutEscapingSlashes
         let tagsString: String
@@ -48,8 +78,6 @@ public final class Signer {
         } else { tagsString = "[]" }
         let contentString: String
         if let cdata = try? encoder.encode(content) { contentString = String(data: cdata, encoding: .utf8) ?? "\"\"" } else { contentString = "\"\"" }
-        let ser = "[0,\"\(pubkey)\",\(createdAt),\(kind),\(tagsString),\(contentString)]"
-        let digest = SHA256.hash(data: ser.data(using: .utf8)!)
-        return digest.map { String(format: "%02x", $0) }.joined()
+        return "[0,\"\(pubkey)\",\(createdAt),\(kind),\(tagsString),\(contentString)]"
     }
 }
