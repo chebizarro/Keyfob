@@ -3,10 +3,43 @@ import LocalAuthentication
 
 public final class PolicyEngine {
     public static let shared = PolicyEngine()
-    private init() {}
 
-    // App Group container identifier
-    private let appGroup = "group.com.yourorg.keyfob"
+    private init() {
+        let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: PolicyEngine.resolvedAppGroup
+        )
+        self.auditLog = AuditLog(containerURL: containerURL)
+    }
+
+    /// Test-only initializer that accepts a custom audit log.
+    internal init(auditLog: AuditLog) {
+        self.auditLog = auditLog
+    }
+
+    private static let resolvedAppGroup: String = {
+        if let override = Bundle.main.infoDictionary?["KEYFOB_APP_GROUP"] as? String, !override.isEmpty {
+            return override
+        }
+        return "group.com.example.keyfob"
+    }()
+
+    /// Serial queue protecting all mutable state.
+    private let queue = DispatchQueue(label: "com.keyfob.policy-engine", qos: .userInitiated)
+
+    // MARK: - Audit Log
+    /// Append-only audit log recording all policy decisions.
+    public let auditLog: AuditLog
+
+    // MARK: - Permission Rules
+    /// Rule store for per-client/per-kind permission rules.
+    ///
+    /// Set during initialization or injected for testing. When set,
+    /// ``evaluatePermission(clientID:identityID:operationKind:eventKind:)``
+    /// consults these rules before falling through to the consent prompt.
+    public var ruleStore: PermissionRuleStore?
+
+    // App Group container identifier — delegates to the static resolver.
+    private var appGroup: String { Self.resolvedAppGroup }
 
     public enum ConsentMode: String, Codable { case perRequest, session }
 
@@ -51,87 +84,175 @@ public final class PolicyEngine {
     public weak var consentProvider: ConsentProvider?
 
     public func preflight(origin: String) throws {
-        // Rate limit
-        try checkRateLimit(for: origin)
-        // Load origins lazily
-        if origins.isEmpty { loadOrigins() }
+        do {
+            try queue.sync {
+                // Rate limit
+                try checkRateLimit(for: origin)
+                // Load origins lazily
+                if origins.isEmpty { loadOrigins() }
+            }
+        } catch {
+            auditLog.log(AuditEntry(origin: origin, action: .rateLimited, detail: error.localizedDescription))
+            throw error
+        }
     }
 
     public func requestConsent(origin: String, eventPreview: String, mode: ConsentMode) throws {
-        // Determine if session covers this request
-        if let rec = origins[origin], rec.status == .allowed, let until = rec.allowUntil, until > Date(), mode == .session {
-            // Session auto-approve; biometric check at session start only (apps should enforce)
+        // Check session coverage under lock
+        let sessionCovers: Bool = queue.sync {
+            if let rec = origins[origin], rec.status == .allowed, let until = rec.allowUntil, until > Date(), mode == .session {
+                return true
+            }
+            return false
+        }
+        if sessionCovers {
+            auditLog.log(AuditEntry(origin: origin, action: .sessionAutoApproved, detail: "mode=\(mode.rawValue)"))
             return
         }
-        // Consult provider if available; otherwise require biometry as minimal gating
-        if let provider = consentProvider {
+
+        // A real consent provider is required. Without one, we must not silently approve.
+        guard let provider = consentProvider else {
+            auditLog.log(AuditEntry(origin: origin, action: .noProvider))
+            throw NSError(domain: "Policy", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: "No consent provider configured. Cannot approve signing requests."])
+        }
+
+        do {
             try provider.requestConsent(origin: origin, eventPreview: eventPreview, mode: mode)
-        } else {
-            let ctx = LAContext()
-            var error: NSError?
-            guard ctx.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-                throw error ?? NSError(domain: "Policy", code: -1)
-            }
+            auditLog.log(AuditEntry(origin: origin, action: .approved, detail: "mode=\(mode.rawValue)"))
+        } catch {
+            auditLog.log(AuditEntry(origin: origin, action: .denied, detail: error.localizedDescription))
+            throw error
+        }
+    }
+
+    // MARK: - Permission Rule Evaluation
+
+    /// Evaluate permission rules for a request before showing a consent prompt.
+    ///
+    /// If a matching rule yields `.allow`, the operation proceeds without prompting.
+    /// If it yields `.deny`, the operation is rejected without prompting.
+    /// If it yields `.prompt` or no rule matches, returns `nil` (caller should
+    /// fall through to the consent prompt).
+    ///
+    /// - Parameters:
+    ///   - clientID: The requesting client's identifier.
+    ///   - identityID: The identity UUID being used, or `nil`.
+    ///   - operationKind: The operation kind string (e.g. `"sign"`).
+    ///   - eventKind: The Nostr event kind for sign operations, or `nil`.
+    /// - Returns: `.allow` or `.deny` for a definitive rule, `nil` for no match or `.prompt`.
+    /// - Throws: If the rule store encounters a storage error.
+    public func evaluatePermission(
+        clientID: String,
+        identityID: UUID? = nil,
+        operationKind: String,
+        eventKind: Int? = nil
+    ) throws -> PermissionRule.Decision? {
+        guard let store = ruleStore else { return nil }
+        let decision = try store.evaluate(
+            clientID: clientID,
+            identityID: identityID,
+            operationKind: operationKind,
+            eventKind: eventKind
+        )
+        switch decision {
+        case .allow:
+            auditLog.log(AuditEntry(
+                origin: clientID,
+                action: .approved,
+                eventKind: eventKind,
+                detail: "rule:allow op=\(operationKind)"
+            ))
+            return .allow
+        case .deny:
+            auditLog.log(AuditEntry(
+                origin: clientID,
+                action: .denied,
+                eventKind: eventKind,
+                detail: "rule:deny op=\(operationKind)"
+            ))
+            return .deny
+        case .prompt:
+            return nil // Fall through to consent prompt.
+        case nil:
+            return nil // No matching rule.
         }
     }
 
     public func recordSuccess(origin: String) {
-        // Update lastUsed and persist
-        var rec = origins[origin] ?? OriginRecord()
-        rec.lastUsed = Date()
-        origins[origin] = rec
-        saveOrigins()
+        queue.sync {
+            var rec = origins[origin] ?? OriginRecord()
+            rec.lastUsed = Date()
+            origins[origin] = rec
+            saveOrigins()
+        }
     }
 
     // MARK: - Public helpers
     public func allow(origin: String, duration: TimeInterval, defaultMode: ConsentMode = .session) {
-        var rec = origins[origin] ?? OriginRecord()
-        rec.status = .allowed
-        rec.allowUntil = Date().addingTimeInterval(duration)
-        rec.defaultMode = defaultMode
-        origins[origin] = rec
-        saveOrigins()
+        queue.sync {
+            var rec = origins[origin] ?? OriginRecord()
+            rec.status = .allowed
+            rec.allowUntil = Date().addingTimeInterval(duration)
+            rec.defaultMode = defaultMode
+            origins[origin] = rec
+            saveOrigins()
+        }
     }
 
     public func deny(origin: String) {
-        origins[origin] = OriginRecord(status: .denied, allowUntil: nil, lastUsed: Date())
-        saveOrigins()
+        queue.sync {
+            origins[origin] = OriginRecord(status: .denied, allowUntil: nil, lastUsed: Date())
+            saveOrigins()
+        }
     }
 
     // MARK: - Caller Allowlist (XPC)
     public func isCallerAllowed(_ bundleID: String) -> Bool {
-        if allowedCallers.isEmpty { loadCallers() }
-        return allowedCallers.contains(bundleID)
+        queue.sync {
+            if allowedCallers.isEmpty { loadCallers() }
+            return allowedCallers.contains(bundleID)
+        }
     }
 
     public func allowCaller(_ bundleID: String) {
-        if allowedCallers.isEmpty { loadCallers() }
-        allowedCallers.insert(bundleID)
-        saveCallers()
+        queue.sync {
+            if allowedCallers.isEmpty { loadCallers() }
+            allowedCallers.insert(bundleID)
+            saveCallers()
+        }
     }
 
     public func removeCaller(_ bundleID: String) {
-        if allowedCallers.isEmpty { loadCallers() }
-        allowedCallers.remove(bundleID)
-        saveCallers()
+        queue.sync {
+            if allowedCallers.isEmpty { loadCallers() }
+            allowedCallers.remove(bundleID)
+            saveCallers()
+        }
     }
 
     public func listAllowedCallers() -> [String] {
-        if allowedCallers.isEmpty { loadCallers() }
-        return Array(allowedCallers).sorted()
+        queue.sync {
+            if allowedCallers.isEmpty { loadCallers() }
+            return Array(allowedCallers).sorted()
+        }
     }
 
     public func startSession(origin: String, pubkey: String, ttl: TimeInterval? = nil) {
-        sessions[SessionKey(origin: origin, pubkey: pubkey)] = Date().addingTimeInterval(ttl ?? defaultSessionTTL)
+        queue.sync {
+            sessions[SessionKey(origin: origin, pubkey: pubkey)] = Date().addingTimeInterval(ttl ?? defaultSessionTTL)
+        }
     }
 
     public func hasValidSession(origin: String, pubkey: String) -> Bool {
-        let key = SessionKey(origin: origin, pubkey: pubkey)
-        if let exp = sessions[key] {
-            if exp > Date() { return true }
-            sessions.removeValue(forKey: key)
+        queue.sync {
+            let key = SessionKey(origin: origin, pubkey: pubkey)
+            if let exp = sessions[key] {
+                if exp > Date() { return true }
+                sessions.removeValue(forKey: key)
+            }
+            return false
         }
-        return false
     }
 
     // MARK: - Internal
