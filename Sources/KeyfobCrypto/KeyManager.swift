@@ -66,15 +66,10 @@ public final class KeyManager {
     private init() {}
 
     // MARK: - Configuration
-    // These must be overridden via build configuration for production.
+    // Delegates to KeychainConfig for shared access group and service constants.
     // See Docs/SECURITY.md for required setup.
-    static let accessGroup: String = {
-        if let override = Bundle.main.infoDictionary?["KEYFOB_KEYCHAIN_ACCESS_GROUP"] as? String, !override.isEmpty {
-            return override
-        }
-        return "TEAMID.com.example.keyfob.shared"
-    }()
-    private let keyAccount = "default.nsec"
+    static var accessGroup: String { KeychainConfig.accessGroup }
+    private var keyAccount: String { KeychainConfig.legacyKeyAccount }
 
     // Generate and persist a secp256k1 key using Keychain with biometry access control.
     public func generateIfNeeded(useICloud: Bool) throws -> Keypair {
