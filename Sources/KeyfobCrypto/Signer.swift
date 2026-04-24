@@ -2,10 +2,16 @@ import Foundation
 import CryptoKit
 import NostrSDK
 
-public struct SignatureResponse: Codable, Equatable {
+public struct SignatureResponse: Codable, Equatable, Sendable {
     public let id: String
     public let sig: String
     public let pubkey: String
+
+    public init(id: String, sig: String, pubkey: String) {
+        self.id = id
+        self.sig = sig
+        self.pubkey = pubkey
+    }
 }
 
 public enum SignerError: Error {

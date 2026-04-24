@@ -1,6 +1,6 @@
 import Foundation
 
-public struct NostrEvent: Codable, Equatable {
+public struct NostrEvent: Codable, Equatable, Sendable {
     public var kind: Int
     public var pubkey: String
     public var created_at: Int
