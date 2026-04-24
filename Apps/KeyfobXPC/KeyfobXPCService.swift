@@ -6,6 +6,17 @@ import KeyfobPolicy
 
 public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol, NSXPCListenerDelegate {
     public func sign(eventJSON: Data, clientBundleID: String, originHint: String?, with reply: @escaping (Data?, NSError?) -> Void) {
+        // Gate: ensure an active identity exists
+        do {
+            try IdentityGate.requireActiveIdentity()
+        } catch {
+            let err = NSError(domain: "KeyfobXPC", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "No active identity configured. Please open Keyfob and create or import a key."
+            ])
+            reply(nil, err)
+            return
+        }
+
         // Validate caller bundle ID against allowlist
         if !PolicyEngine.shared.isCallerAllowed(clientBundleID) {
             let err = NSError(domain: "KeyfobXPC", code: 403, userInfo: [NSLocalizedDescriptionKey: "Caller not allowed: \(clientBundleID)"])
@@ -24,6 +35,17 @@ public final class KeyfobXPCService: NSObject, KeyfobXPCProtocol, NSXPCListenerD
     }
 
     public func getPublicKey(clientBundleID: String, with reply: @escaping (String?, NSError?) -> Void) {
+        // Gate: ensure an active identity exists
+        do {
+            try IdentityGate.requireActiveIdentity()
+        } catch {
+            let err = NSError(domain: "KeyfobXPC", code: 404, userInfo: [
+                NSLocalizedDescriptionKey: "No active identity configured. Please open Keyfob and create or import a key."
+            ])
+            reply(nil, err)
+            return
+        }
+
         if !PolicyEngine.shared.isCallerAllowed(clientBundleID) {
             let err = NSError(domain: "KeyfobXPC", code: 403, userInfo: [NSLocalizedDescriptionKey: "Caller not allowed: \(clientBundleID)"])
             reply(nil, err)

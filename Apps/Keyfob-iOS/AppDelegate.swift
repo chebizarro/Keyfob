@@ -1,8 +1,8 @@
 import UIKit
 import KeyfobBridge
+import KeyfobCore
 import KeyfobPolicy
 
-@main
 class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Register consent provider to surface approval UI
@@ -12,6 +12,18 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     // Handle custom URL scheme: keyfob://sign?...
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
+        // Gate: ensure an active identity exists before signing
+        guard IdentityGate.hasActiveIdentity() else {
+            // No identity — show onboarding instead of failing with crypto error.
+            // Post notification so the UI layer can present onboarding.
+            NotificationCenter.default.post(
+                name: .keyfobIdentityRequired,
+                object: nil,
+                userInfo: ["url": url]
+            )
+            return true
+        }
+
         // Parse and sign, then open callback
         do {
             let parsed = try URLRouter.parse(url)
@@ -36,10 +48,32 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // Handle Universal Links: https://keyfob.example.com/app/...
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
         guard userActivity.activityType == NSUserActivityTypeBrowsingWeb, let url = userActivity.webpageURL else { return false }
+
+        // Gate: ensure an active identity exists
+        guard IdentityGate.hasActiveIdentity() else {
+            NotificationCenter.default.post(
+                name: .keyfobIdentityRequired,
+                object: nil,
+                userInfo: ["url": url]
+            )
+            return true
+        }
+
         if let cbURL = BridgeHandler.handleUniversalLink(url) {
             UIApplication.shared.open(cbURL, options: [:], completionHandler: nil)
             return true
         }
         return false
     }
+}
+
+// MARK: - Notification for identity-required events
+
+public extension Notification.Name {
+    /// Posted when an IPC request arrives but no active identity is configured.
+    /// The UI layer should observe this and present onboarding.
+    ///
+    /// `userInfo` may contain:
+    /// - `"url"`: The original `URL` that triggered the request.
+    static let keyfobIdentityRequired = Notification.Name("keyfobIdentityRequired")
 }

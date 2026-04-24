@@ -14,6 +14,9 @@ public struct SignNostrEvent: AppIntent {
     public init() {}
 
     public func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        // Gate: ensure an active identity exists
+        try IdentityGate.requireActiveIdentity()
+
         // Parse event
         let data = eventJSON.data(using: .utf8) ?? Data()
         let evt = try JSONDecoder().decode(NostrEvent.self, from: data)

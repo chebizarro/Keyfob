@@ -5,6 +5,9 @@ import KeyfobCrypto
 public enum BridgeHandler {
     public static func handleUniversalLink(_ url: URL) -> URL? {
         do {
+            // Gate: ensure an active identity exists before attempting any operation
+            try IdentityGate.requireActiveIdentity()
+
             let parsed = try URLRouter.parseUniversalLink(url)
             switch parsed.mode {
             case "pubkey":
@@ -21,6 +24,14 @@ public enum BridgeHandler {
             default:
                 return URLRouter.makeCallbackURL(cb: parsed.callback, result: .init(error: "invalid", msg: "Unknown mode"))
             }
+        } catch let error as IdentityGateError {
+            // Clear error for missing identity — callers should show onboarding
+            var cb = URL(string: "")
+            if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+                if let q = comps.queryItems?.first(where: { $0.name == "cb" })?.value, let u = URL(string: q) { cb = u }
+            }
+            if let cb = cb { return URLRouter.makeCallbackURL(cb: cb, result: .init(error: "no_identity", msg: error.localizedDescription)) }
+            return nil
         } catch {
             // Fallback: try to encode error
             var cb = URL(string: "")
