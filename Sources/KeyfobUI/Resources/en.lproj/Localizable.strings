@@ -65,3 +65,26 @@
 "import.format_unknown" = "Unrecognized format";
 "import.error_npub" = "Cannot import a public key (npub). Please enter a private key.";
 "import.error_unknown" = "Unrecognized key format. Use nsec, hex, or ncryptsec.";
+
+/* Key Management */
+"keys.title" = "Keys";
+"keys.empty" = "No keys yet. Create or import a key to get started.";
+"keys.active_badge" = "Active";
+"keys.created_fmt" = "Created %@";
+"keys.set_active" = "Set as Active";
+"keys.rename" = "Rename";
+"keys.copy_npub" = "Copy npub";
+"keys.copy_hex" = "Copy Hex";
+"keys.delete" = "Delete";
+"keys.error_title" = "Error";
+"keys.ok" = "OK";
+"keys.cancel" = "Cancel";
+"keys.delete_title" = "Delete Identity";
+"keys.delete_message" = "Are you sure you want to delete \"%@\"? This cannot be undone.";
+"keys.delete_confirm" = "Delete";
+"keys.rename_title" = "Rename Identity";
+"keys.rename_placeholder" = "e.g. Main, Personal, Work";
+"keys.rename_save" = "Save";
+"keys.source_generated" = "Generated on this device";
+"keys.source_imported" = "Imported from key";
+"keys.source_nip49" = "Imported from encrypted backup";

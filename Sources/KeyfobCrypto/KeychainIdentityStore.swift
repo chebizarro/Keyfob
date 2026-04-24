@@ -200,6 +200,17 @@ public final class KeychainIdentityStore: IdentityStore, @unchecked Sendable {
         }
     }
 
+    public func updateLabel(for id: UUID, label: String?) throws {
+        try withMetadataLock { metadata in
+            guard let idx = metadata.identities.firstIndex(where: { $0.id == id }) else {
+                throw IdentityStoreError.identityNotFound(id)
+            }
+            metadata.identities[idx].label = label
+            try self.writeMetadata(metadata)
+            self.postChangeNotification()
+        }
+    }
+
     public func deleteIdentity(_ id: UUID) throws {
         try withMetadataLock { metadata in
             guard let idx = metadata.identities.firstIndex(where: { $0.id == id }) else {

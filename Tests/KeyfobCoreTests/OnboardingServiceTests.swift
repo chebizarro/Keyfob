@@ -86,6 +86,16 @@ final class MockIdentityStore: IdentityStore, @unchecked Sendable {
         return identities[activeID]?.identity
     }
 
+    func updateLabel(for id: UUID, label: String?) throws {
+        guard var entry = identities[id] else {
+            throw IdentityStoreError.identityNotFound(id)
+        }
+        var updated = entry.identity
+        updated.label = label
+        entry.identity = updated
+        identities[id] = entry
+    }
+
     func setActiveIdentity(_ id: UUID?) throws {
         activeID = id
     }

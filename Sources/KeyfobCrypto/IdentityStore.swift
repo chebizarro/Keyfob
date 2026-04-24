@@ -65,6 +65,12 @@ public protocol IdentityStore: Sendable {
     /// - Parameter id: The UUID of the identity to activate, or `nil` to clear.
     func setActiveIdentity(_ id: UUID?) throws
 
+    /// Update the label for an identity.
+    /// - Parameters:
+    ///   - id: The UUID of the identity to update.
+    ///   - label: The new label (nil or empty to clear).
+    func updateLabel(for id: UUID, label: String?) throws
+
     /// Delete an identity and its Keychain entry.
     /// If the deleted identity was active, the active identity is cleared.
     /// - Parameter id: The UUID of the identity to delete.

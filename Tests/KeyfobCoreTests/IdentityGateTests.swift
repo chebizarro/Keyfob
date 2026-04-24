@@ -36,6 +36,7 @@ private final class GateMockStore: IdentityStore, @unchecked Sendable {
         return activeIdentityResult
     }
 
+    func updateLabel(for id: UUID, label: String?) throws {}
     func setActiveIdentity(_ id: UUID?) throws {}
     func deleteIdentity(_ id: UUID) throws {}
 
