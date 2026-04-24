@@ -312,14 +312,15 @@ final class KeychainIdentityStoreMetadataTests: XCTestCase {
         }
     }
 
-    func testImportIdentityWithNIP49SourceThrows() {
+    func testImportIdentityWithNIP49Source_invalidKey_throws() {
+        // NIP-49 source is now allowed (kf-9h2), but invalid hex still fails
         XCTAssertThrowsError(try store.importIdentity(
             privateKeyHex: "aabb",
             source: .nip49,
             label: nil,
             makeActive: true
         )) { error in
-            XCTAssertEqual(error as? IdentityStoreError, .unsupportedSourceForCreate(.nip49))
+            XCTAssertEqual(error as? IdentityStoreError, .invalidPrivateKey)
         }
     }
 

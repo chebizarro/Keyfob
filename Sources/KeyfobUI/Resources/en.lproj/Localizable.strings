@@ -10,3 +10,58 @@
 "consent.serialize_error_hint" = "The event could not be serialized for display. You can still approve or deny.";
 "consent.copy_json" = "Copy JSON";
 "consent.copy_content" = "Copy Content";
+
+/* Onboarding */
+"onboarding.title" = "Welcome to Keyfob";
+"onboarding.subtitle" = "Your secure Nostr key manager";
+"onboarding.feature1_title" = "Secure Key Storage";
+"onboarding.feature1_desc" = "Your private keys stay on-device, protected by the system Keychain";
+"onboarding.feature2_title" = "Controlled Signing";
+"onboarding.feature2_desc" = "Review and approve every signing request — no app can sign without your consent";
+"onboarding.feature3_title" = "Multi-Key Support";
+"onboarding.feature3_desc" = "Manage multiple identities and switch between them effortlessly";
+"onboarding.create_btn" = "Create New Key";
+"onboarding.import_btn" = "Import Existing Key";
+"onboarding.error_title" = "Error";
+"onboarding.ok" = "OK";
+
+/* Create Key */
+"create.title" = "Create New Key";
+"create.subtitle" = "Generate a fresh Nostr keypair stored securely on this device";
+"create.label_header" = "Label (optional)";
+"create.label_placeholder" = "e.g. Main, Personal, Work";
+"create.info_secure" = "Generated with secure random number generation";
+"create.info_local" = "Private key never leaves your device";
+"create.info_backup" = "You'll be prompted to back up your secret key";
+"create.generate_btn" = "Generate Secure Key";
+"create.cancel" = "Cancel";
+
+/* Backup Key */
+"backup.title" = "Back Up Your Secret Key";
+"backup.bullet1" = "Save this key in a secure password manager";
+"backup.bullet2" = "Never share this key with anyone";
+"backup.bullet3" = "You'll need this key to recover your identity";
+"backup.your_npub" = "Your public identity";
+"backup.reveal" = "Reveal Key";
+"backup.hide" = "Hide Key";
+"backup.copy" = "Copy";
+"backup.done" = "I've Saved My Key";
+
+/* Import Key */
+"import.title" = "Import Key";
+"import.subtitle" = "Enter your nsec, hex private key, or ncryptsec";
+"import.key_header" = "Private Key";
+"import.key_placeholder" = "nsec1… or ncryptsec1… or hex";
+"import.password_header" = "Password";
+"import.password_placeholder" = "Decryption password";
+"import.label_header" = "Label (optional)";
+"import.label_placeholder" = "e.g. Imported, Recovery";
+"import.import_btn" = "Import";
+"import.cancel" = "Cancel";
+"import.format_nsec" = "nsec (private key)";
+"import.format_hex" = "Hex (private key)";
+"import.format_ncryptsec" = "Encrypted key — enter password below";
+"import.format_npub" = "This is a public key — a private key is required";
+"import.format_unknown" = "Unrecognized format";
+"import.error_npub" = "Cannot import a public key (npub). Please enter a private key.";
+"import.error_unknown" = "Unrecognized key format. Use nsec, hex, or ncryptsec.";

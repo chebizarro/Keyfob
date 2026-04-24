@@ -129,7 +129,7 @@ public final class KeychainIdentityStore: IdentityStore, @unchecked Sendable {
     }
 
     public func importIdentity(privateKeyHex: String, source: IdentitySource, label: String?, makeActive: Bool) throws -> Identity {
-        guard source == .imported || source == .generated else {
+        guard source == .imported || source == .generated || source == .nip49 else {
             throw IdentityStoreError.unsupportedSourceForCreate(source)
         }
 
