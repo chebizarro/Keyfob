@@ -20,12 +20,15 @@ let package = Package(
     dependencies: [
         // Nostr SDK for iOS/macOS (secp256k1 + Nostr primitives)
         .package(url: "https://github.com/nostr-sdk/nostr-sdk-ios.git", from: "0.3.0"),
+        // CryptoSwift for scrypt key derivation (NIP-49)
+        .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", from: "1.8.4"),
     ],
     targets: [
         .target(
             name: "KeyfobCrypto",
             dependencies: [
-                .product(name: "NostrSDK", package: "nostr-sdk-ios")
+                .product(name: "NostrSDK", package: "nostr-sdk-ios"),
+                .product(name: "CryptoSwift", package: "CryptoSwift"),
             ],
             path: "Sources/KeyfobCrypto"
         ),
