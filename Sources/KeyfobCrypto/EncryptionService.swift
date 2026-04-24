@@ -146,6 +146,39 @@ public struct EncryptionService: NIP44v2Encrypting, LegacyDirectMessageEncryptin
         }
     }
 
+    // MARK: - NIP-04 Pipeline Compatibility
+
+    // These methods provide the same functionality as the deprecated nip04*
+    // methods but without the @available annotation, allowing the pipeline
+    // to call them without generating deprecation warnings. NIP-04 support
+    // is intentional for backward compatibility with legacy clients.
+
+    /// Encrypt content for a peer using legacy NIP-04 (pipeline entry point).
+    ///
+    /// Functionally identical to ``nip04Encrypt(content:peerPubkeyHex:using:)``
+    /// but not marked deprecated, since the pipeline intentionally supports NIP-04.
+    public func legacyEncrypt(content: String, peerPubkeyHex: String, using keypair: NostrSDK.Keypair) throws -> String {
+        let peerPublicKey = try resolvedPeerPublicKey(peerPubkeyHex)
+        do {
+            return try legacyEncrypt(content: content, privateKey: keypair.privateKey, publicKey: peerPublicKey)
+        } catch {
+            throw EncryptionServiceError.nip04EncryptionFailed(error.localizedDescription)
+        }
+    }
+
+    /// Decrypt NIP-04 ciphertext from a peer (pipeline entry point).
+    ///
+    /// Functionally identical to ``nip04Decrypt(encryptedContent:peerPubkeyHex:using:)``
+    /// but not marked deprecated, since the pipeline intentionally supports NIP-04.
+    public func legacyDecrypt(encryptedContent: String, peerPubkeyHex: String, using keypair: NostrSDK.Keypair) throws -> String {
+        let peerPublicKey = try resolvedPeerPublicKey(peerPubkeyHex)
+        do {
+            return try legacyDecrypt(encryptedContent: encryptedContent, privateKey: keypair.privateKey, publicKey: peerPublicKey)
+        } catch {
+            throw EncryptionServiceError.nip04DecryptionFailed(error.localizedDescription)
+        }
+    }
+
     // MARK: - Private
 
     /// Resolve and validate a peer public key hex string to an SDK ``PublicKey``.
