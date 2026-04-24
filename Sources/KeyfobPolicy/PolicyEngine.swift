@@ -1,6 +1,12 @@
 import Foundation
 import LocalAuthentication
 
+/// Errors from ``PolicyEngine`` operation preflight.
+public enum PolicyOperationError: Error, Equatable {
+    /// A permission rule denied this operation.
+    case deniedByRule(clientID: String, operationKind: String)
+}
+
 public final class PolicyEngine {
     public static let shared = PolicyEngine()
 
@@ -140,13 +146,17 @@ public final class PolicyEngine {
     ///   - identityID: The identity UUID being used, or `nil`.
     ///   - operationKind: The operation kind string (e.g. `"sign"`).
     ///   - eventKind: The Nostr event kind for sign operations, or `nil`.
+    ///   - counterpartyPubkey: Peer pubkey hex for encrypt/decrypt, or `nil`.
+    ///   - identityPubkey: The identity's pubkey hex, or `nil`.
     /// - Returns: `.allow` or `.deny` for a definitive rule, `nil` for no match or `.prompt`.
     /// - Throws: If the rule store encounters a storage error.
     public func evaluatePermission(
         clientID: String,
         identityID: UUID? = nil,
         operationKind: String,
-        eventKind: Int? = nil
+        eventKind: Int? = nil,
+        counterpartyPubkey: String? = nil,
+        identityPubkey: String? = nil
     ) throws -> PermissionRule.Decision? {
         guard let store = ruleStore else { return nil }
         let decision = try store.evaluate(
@@ -159,17 +169,23 @@ public final class PolicyEngine {
         case .allow:
             auditLog.log(AuditEntry(
                 origin: clientID,
-                action: .approved,
+                action: .ruleAutoApproved,
                 eventKind: eventKind,
-                detail: "rule:allow op=\(operationKind)"
+                detail: "rule:allow op=\(operationKind)",
+                operationType: operationKind,
+                counterpartyPubkey: counterpartyPubkey,
+                identityUsed: identityPubkey
             ))
             return .allow
         case .deny:
             auditLog.log(AuditEntry(
                 origin: clientID,
-                action: .denied,
+                action: .ruleAutoDenied,
                 eventKind: eventKind,
-                detail: "rule:deny op=\(operationKind)"
+                detail: "rule:deny op=\(operationKind)",
+                operationType: operationKind,
+                counterpartyPubkey: counterpartyPubkey,
+                identityUsed: identityPubkey
             ))
             return .deny
         case .prompt:
@@ -177,6 +193,128 @@ public final class PolicyEngine {
         case nil:
             return nil // No matching rule.
         }
+    }
+
+    // MARK: - Operation Preflight
+
+    /// Full preflight check for any operation type.
+    ///
+    /// Performs rate limiting, permission rule evaluation, and (if needed) consent prompting
+    /// in a single call. Logs the outcome to the audit trail with full operation context.
+    ///
+    /// Call flow:
+    /// 1. Rate limit check (throws on excess)
+    /// 2. Permission rule evaluation (auto-approve or auto-deny if a rule matches)
+    /// 3. Consent prompt (if no rule matched and a provider is available)
+    ///
+    /// - Parameters:
+    ///   - clientID: The requesting client's identifier.
+    ///   - identityID: The identity UUID being used, or `nil`.
+    ///   - operationKind: The operation kind string (e.g. `"sign"`, `"nip44Encrypt"`).
+    ///   - eventKind: The Nostr event kind for sign operations, or `nil`.
+    ///   - counterpartyPubkey: Peer pubkey hex for encrypt/decrypt, or `nil`.
+    ///   - identityPubkey: The resolved identity's pubkey hex, or `nil`.
+    ///   - eventPreview: Event JSON preview for the consent dialog.
+    ///   - mode: Consent mode (per-request or session).
+    /// - Throws: On rate limiting, rule denial, consent denial, or missing provider.
+    public func preflightOperation(
+        clientID: String,
+        identityID: UUID? = nil,
+        operationKind: String,
+        eventKind: Int? = nil,
+        counterpartyPubkey: String? = nil,
+        identityPubkey: String? = nil,
+        eventPreview: String = "{}",
+        mode: ConsentMode = .perRequest
+    ) throws {
+        // 1. Rate limit (shared across all operation types).
+        try preflight(origin: clientID)
+
+        // 2. Permission rule evaluation.
+        if let decision = try evaluatePermission(
+            clientID: clientID,
+            identityID: identityID,
+            operationKind: operationKind,
+            eventKind: eventKind,
+            counterpartyPubkey: counterpartyPubkey,
+            identityPubkey: identityPubkey
+        ) {
+            switch decision {
+            case .allow:
+                return // Rule auto-approved; already audited.
+            case .deny:
+                throw PolicyOperationError.deniedByRule(
+                    clientID: clientID,
+                    operationKind: operationKind
+                )
+            case .prompt:
+                break // Fall through (shouldn't reach here, but safety).
+            }
+        }
+
+        // 3. Consent prompt (no rule matched).
+        try requestConsent(origin: clientID, eventPreview: eventPreview, mode: mode)
+    }
+
+    /// Record a successful operation completion with full context.
+    ///
+    /// - Parameters:
+    ///   - clientID: The requesting client's identifier.
+    ///   - operationKind: The operation kind string.
+    ///   - eventKind: The Nostr event kind (for sign), or `nil`.
+    ///   - counterpartyPubkey: Peer pubkey hex (for encrypt/decrypt), or `nil`.
+    ///   - identityPubkey: The identity's pubkey hex, or `nil`.
+    ///   - durationMs: End-to-end operation duration in milliseconds.
+    public func recordOperationSuccess(
+        clientID: String,
+        operationKind: String,
+        eventKind: Int? = nil,
+        counterpartyPubkey: String? = nil,
+        identityPubkey: String? = nil,
+        durationMs: Int? = nil
+    ) {
+        recordSuccess(origin: clientID)
+        auditLog.log(AuditEntry(
+            origin: clientID,
+            action: .approved,
+            eventKind: eventKind,
+            detail: "completed op=\(operationKind)",
+            durationMs: durationMs,
+            operationType: operationKind,
+            counterpartyPubkey: counterpartyPubkey,
+            identityUsed: identityPubkey
+        ))
+    }
+
+    /// Record a failed operation with full context.
+    ///
+    /// - Parameters:
+    ///   - clientID: The requesting client's identifier.
+    ///   - operationKind: The operation kind string.
+    ///   - eventKind: The Nostr event kind (for sign), or `nil`.
+    ///   - counterpartyPubkey: Peer pubkey hex (for encrypt/decrypt), or `nil`.
+    ///   - identityPubkey: The identity's pubkey hex, or `nil`.
+    ///   - error: The error that caused the failure.
+    ///   - durationMs: End-to-end operation duration in milliseconds.
+    public func recordOperationFailure(
+        clientID: String,
+        operationKind: String,
+        eventKind: Int? = nil,
+        counterpartyPubkey: String? = nil,
+        identityPubkey: String? = nil,
+        error: Error,
+        durationMs: Int? = nil
+    ) {
+        auditLog.log(AuditEntry(
+            origin: clientID,
+            action: .denied,
+            eventKind: eventKind,
+            detail: "failed op=\(operationKind): \(error.localizedDescription)",
+            durationMs: durationMs,
+            operationType: operationKind,
+            counterpartyPubkey: counterpartyPubkey,
+            identityUsed: identityPubkey
+        ))
     }
 
     public func recordSuccess(origin: String) {

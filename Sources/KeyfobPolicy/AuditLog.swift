@@ -11,15 +11,19 @@ public struct AuditEntry: Codable, Equatable, Sendable {
         case sessionAutoApproved
         case rateLimited
         case noProvider
+        /// Rule-based auto-approve (no user prompt).
+        case ruleAutoApproved
+        /// Rule-based auto-deny (no user prompt).
+        case ruleAutoDenied
     }
 
     /// ISO-8601 timestamp of when the event occurred.
     public let timestamp: Date
-    /// The requesting origin (domain or bundle ID).
+    /// The requesting origin (client ID, domain, or bundle ID).
     public let origin: String
     /// The policy decision.
     public let action: Action
-    /// Nostr event kind, if available.
+    /// Nostr event kind, if available (for sign operations).
     public let eventKind: Int?
     /// Optional human-readable detail (e.g. denial reason, consent mode).
     public let detail: String?
@@ -28,13 +32,34 @@ public struct AuditEntry: Codable, Equatable, Sendable {
     /// signing latency including consent UI time.
     public let durationMs: Int?
 
+    /// The type of cryptographic operation performed.
+    ///
+    /// Maps to `SignerOperationKind.rawValue` (e.g. `"sign"`, `"nip44Encrypt"`,
+    /// `"nip44Decrypt"`, `"nip04Encrypt"`, `"nip04Decrypt"`).
+    /// `nil` for legacy entries that predate this field.
+    public let operationType: String?
+
+    /// The counterparty public key hex for encrypt/decrypt operations.
+    ///
+    /// Identifies who the user was encrypting to or decrypting from.
+    /// `nil` for sign operations or legacy entries.
+    public let counterpartyPubkey: String?
+
+    /// The public key hex of the identity used for this operation.
+    ///
+    /// `nil` for legacy entries or rate-limited requests (where no identity was resolved).
+    public let identityUsed: String?
+
     public init(
         timestamp: Date = Date(),
         origin: String,
         action: Action,
         eventKind: Int? = nil,
         detail: String? = nil,
-        durationMs: Int? = nil
+        durationMs: Int? = nil,
+        operationType: String? = nil,
+        counterpartyPubkey: String? = nil,
+        identityUsed: String? = nil
     ) {
         self.timestamp = timestamp
         self.origin = origin
@@ -42,6 +67,9 @@ public struct AuditEntry: Codable, Equatable, Sendable {
         self.eventKind = eventKind
         self.detail = detail
         self.durationMs = durationMs
+        self.operationType = operationType
+        self.counterpartyPubkey = counterpartyPubkey
+        self.identityUsed = identityUsed
     }
 }
 
@@ -155,6 +183,26 @@ public final class AuditLog {
         queue.sync {
             _readAll()
                 .filter { $0.action == action }
+                .suffix(limit)
+                .map { $0 }
+        }
+    }
+
+    /// Read entries filtered by operation type (e.g. `"sign"`, `"nip44Encrypt"`).
+    public func entries(forOperationType operationType: String, limit: Int = 100) -> [AuditEntry] {
+        queue.sync {
+            _readAll()
+                .filter { $0.operationType == operationType }
+                .suffix(limit)
+                .map { $0 }
+        }
+    }
+
+    /// Read entries filtered by counterparty public key.
+    public func entries(forCounterparty pubkeyHex: String, limit: Int = 100) -> [AuditEntry] {
+        queue.sync {
+            _readAll()
+                .filter { $0.counterpartyPubkey == pubkeyHex }
                 .suffix(limit)
                 .map { $0 }
         }
