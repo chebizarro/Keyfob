@@ -4,6 +4,7 @@ import SwiftUI
 import KeyfobPolicy
 import KeyfobCore
 import KeyfobUI
+import KeyfobCrypto
 import LocalAuthentication
 
 final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
@@ -35,6 +36,10 @@ final class MacConsentCoordinator: NSObject, PolicyEngine.ConsentProvider {
                         ctx.evaluatePolicy(policy, localizedReason: "Start Keyfob session") { success, evalError in
                             DispatchQueue.main.async {
                                 if success {
+                                    // Start a policy session matching iOS behavior
+                                    if let pair = try? KeyManager.shared.loadKeypair() {
+                                        PolicyEngine.shared.startSession(origin: origin, pubkey: pair.pubkeyHex, ttl: decision.ttl)
+                                    }
                                     approved = true
                                 } else {
                                     approved = false

@@ -1,12 +1,19 @@
 import Foundation
 import KeyfobCore
+import KeyfobCrypto
+import KeyfobBridge
 
 final class XPCClient {
     static let shared = XPCClient()
     private init() {}
 
-    // Replace with your XPC service bundle identifier (also set in project signing)
-    private let serviceName = "TODO.com.yourorg.keyfob.mac.xpc"
+    // Reads from Info.plist key KEYFOB_XPC_SERVICE_NAME, set via Keyfob.xcconfig.
+    private let serviceName: String = {
+        if let override = Bundle.main.infoDictionary?["KEYFOB_XPC_SERVICE_NAME"] as? String, !override.isEmpty {
+            return override
+        }
+        return "com.example.keyfob.mac.xpc"
+    }()
 
     func sign(event: NostrEvent, originHint: String? = nil, completion: @escaping (Result<SignatureResponse, Error>) -> Void) {
         let connection = NSXPCConnection(serviceName: serviceName)

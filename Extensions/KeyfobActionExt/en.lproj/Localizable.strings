@@ -1,0 +1,7 @@
+"action.title" = "Sign with Keyfob";
+"action.signing" = "Signing event…";
+"action.success" = "Signed successfully";
+"action.err_no_text" = "Could not read text from shared content.";
+"action.err_no_event" = "No event JSON found in shared content.";
+"action.err_invalid_json" = "The shared text is not valid JSON.";
+"action.err_parse_fmt" = "Could not parse Nostr event: %@";

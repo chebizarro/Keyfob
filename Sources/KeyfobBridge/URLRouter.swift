@@ -6,14 +6,23 @@ public enum URLRouterError: Error { case invalid, tooLarge }
 public struct URLRouter {
     public static let scheme = "keyfob"
     public static let maxPayload = 16 * 1024 // 16 KB cap
-    public static let ulHost = "keyfob.example.com" // TODO: replace
+    // Override via KEYFOB_UL_HOST in Info.plist for production.
+    public static let ulHost: String = {
+        if let override = Bundle.main.infoDictionary?["KEYFOB_UL_HOST"] as? String, !override.isEmpty {
+            return override
+        }
+        return "keyfob.example.com"
+    }()
 
     private static func decodeBase64URL(_ s: String) -> Data? {
         var str = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         let rem = str.count % 4
-        if rem == 2 { str += "==" }
-        else if rem == 3 { str += "=" }
-        else if rem != 0 && rem != 0 { /* no-op */ }
+        switch rem {
+        case 0: break
+        case 2: str += "=="
+        case 3: str += "="
+        default: return nil // remainder 1 is invalid base64
+        }
         return Data(base64Encoded: str)
     }
 
